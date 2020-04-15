@@ -1,4 +1,4 @@
-use crate::single_var::StopCause::{IntervalFound, MaxIterationsReached};
+use crate::single_var::StopCause::{IntervalFound, MaxIterationsReached, RootApproxFound, RootFound};
 use num_traits::{Float, abs};
 
 #[derive(Debug)]
@@ -11,6 +11,7 @@ pub enum StopCause {
     IntervalFound,
     ComplexRoot,
     MultipleRoot,
+    InvalidInput,
 }
 
 #[derive(Debug)]
@@ -125,10 +126,12 @@ impl RunnableMethod for IncrementalSearch {
 
 #[derive(Debug)]
 pub struct Bisection {
-    xa: f64,
-    xb: f64,
-    ya: f64,
-    yb: f64,
+    xu: f64,
+    xl: f64,
+    xm: f64,
+    yu: f64,
+    yl: f64,
+    ym: f64,
     f: fn(f64) -> f64,
     n: u32,
     i: u32,
@@ -139,9 +142,26 @@ pub struct Bisection {
 }
 
 impl Bisection {
-    pub fn new(f: fn(f64)->f64, xa: f64, xb: f64, tol: f64, n:u32, error_type: Error) -> Bisection {
-        let (ya, yb) = (f(x0), f(xb));
-        Bisection{xa, xb, f, n, i: 0, ya, yb, stop: None, tol: abs(tol), err: Float::infinity(), error_type}
+    pub fn new(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_type: Error) -> Bisection {
+        let (xu, xl) = if _xu < _xl {
+            (_xl, _xu)
+        } else {
+            (_xu, _xl)
+        };
+        let (yu, yl) = (f(xu), f(xl));
+        let xm = (xu + xl)/2f64;
+        let ym = f(xm);
+        let status = if yu * yl > 0f64 {
+            Some(StopCause::InvalidInput)
+        } else if yu == 0f64 {
+            Some(StopCause::RootFound)
+        } else if yl == 0f64 {
+            Some(StopCause::RootFound)
+        } else {
+            None
+        };
+        Bisection{xu, xl, f, n, i: 0, yu, yl,xm, ym,
+            stop: status, tol: abs(tol), err: Float::infinity(), error_type}
     }
 }
 
@@ -150,8 +170,8 @@ impl RunnableMethod for Bisection {
         let mut ended = false;
         let mut log = Logbook::new(self.n);
         while !ended {
+            log.registry(self.i, vec![self.xu, self.yu, self.xm, self.ym, self.xl, self.yl, self.err]);
             ended = self.pursue();
-            log.registry(self.i, vec![self.xa, self.ya, self.xb, self.yb]);
         }
         log
     }
@@ -164,20 +184,36 @@ impl RunnableMethod for Bisection {
     }
 
     fn next(&mut self) -> Option<f64> {
-        if self.ya*self.yb < 0f64 {
-            self.stop = Some(IntervalFound);
+        if self.stop != None {
+            return None;
+        }
+        if self.ym == 0f64 {
+            self.stop = Some(RootFound);
+            return None
+        }
+        if self.err < self.tol {
+            self.stop = Some(RootApproxFound);
             return None
         }
         if self.i >= self.n {
             self.stop = Some(MaxIterationsReached);
             return None
         }
-        self.xa = self.xb;
-        self.ya = self.yb;
-        self.xb = self.xa + self.dx;
-        self.yb = (self.f)(self.xb);
+
+        let ans: f64;
+        if self.yl * self.ym < 0f64 {
+            self.xu = self.xm;
+            self.yu = self.ym;
+
+        } else {
+            self.xl = self.xm;
+            self.yl = self.ym;
+        }
+        self.xm = (self.xu + self.xl)/2f64;
+        self.ym = (self.f)(self.xm);
+
         self.i += 1;
-        Some(self.xb)
+        Some(self.xm)
     }
     fn pursue(&mut self) -> bool {
         if self.next() == None {
