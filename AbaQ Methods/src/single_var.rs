@@ -1,20 +1,23 @@
-use crate::single_var::StopCause::{IntervalFound, MaxIterationsReached, RootApproxFound, RootFound};
 use num_traits::{Float, abs};
 
-#[derive(Debug)]
-pub enum StopCause {
-    RootFound,
-    RootApproxFound,
+#[derive(Debug, Copy, Clone)]
+pub enum Pessimistic {
     MaxIterationsReached,
     DivBy0,
     FunctionOutOfDomain,
-    IntervalFound,
     ComplexRoot,
     MultipleRoot,
     InvalidInput,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
+pub enum Optimistic {
+    RootFound,
+    RootApproxFound,
+    IntervalFound,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Error {
     Absolute,
     Relative
@@ -44,15 +47,169 @@ impl Logbook {
         self.regs.push(Log::new(i, vars));
     }
 }
-
+/*
 pub trait RunnableMethod {
     fn run(&mut self) -> Logbook;
     fn run_with_no_log(&mut self);
     fn next(&mut self) -> Option<f64>;
     fn pursue(&mut self) -> bool;
+}*/
+
+//Methods
+
+pub fn incremental_search(f: fn(f64)->f64, x0: f64, dx: f64, n:u32)
+    -> Result<(Option<f64>, Option<(f64, f64)>, Optimistic), Pessimistic> {
+    let (mut xa, mut xb) = (x0, x0 + dx);
+    let (mut ya, mut yb) = (f(xa), f(xb));
+
+    let mut i = 0u32;
+    while ya * yb > 0f64 && i < n {
+        xa = xb;
+        xb = xa + dx;
+        ya = f(xa);
+        yb = f(xb);
+        i += 1;
+    }
+    if ya == 0f64 {
+        return Ok((Some(xa), None, Optimistic::RootFound));
+    }
+    if yb == 0f64 {
+        return Ok((Some(xb), None, Optimistic::RootFound));
+    }
+    if ya * yb < 0f64 {
+        return Ok((None, Some((xa, xb)), Optimistic::IntervalFound));
+    }
+    Err(Pessimistic::MaxIterationsReached)
+}
+
+pub fn bisection(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_type: Error)
+                          -> Result<(f64, u32, Optimistic), Pessimistic> {
+    let (mut xu, mut xl) = if _xu > _xl {
+        (_xu, _xl)
+    } else {
+        (_xl, _xu)
+    };
+    let (mut yu, mut yl) = (f(xu), f(xl));
+    if yu == 0f64 {
+        return Ok((xu, 0, Optimistic::RootFound));
+    }
+    if yl == 0f64 {
+        return Ok((xl, 0, Optimistic::RootFound));
+    }
+    if yu*yl > 0f64 {
+        return Err(Pessimistic::InvalidInput);
+    }
+    let mut xm = (xl + xu)/2f64;
+    let (mut err, mut ym): (f64, f64) = (Float::infinity(), f(xm));
+    let mut i = 1u32;
+    let mut xaux: f64 = 0f64;
+    while ym != 0f64 && err > tol && i < n {
+        if yl * ym < 0f64 {
+            xu = xm;
+            yu = ym;
+        } else {
+            xl = xm;
+            yl = ym;
+        }
+        xaux = xm;
+        xm = (xl + xu)/2f64;
+        ym = f(xm);
+        err = if error_type == Error::Relative && abs(xm) > Float::epsilon() {
+            abs((xm - xaux)/xm)
+        } else {
+            abs(xm - xaux)
+        };
+        i += 1;
+    }
+    if ym == 0f64 {
+        return Ok((xm, i, Optimistic::RootFound));
+    }
+    if err < tol {
+        return Ok((xm, i, Optimistic::RootApproxFound));
+    }
+    Err(Pessimistic::MaxIterationsReached)
+
+}
+
+pub fn false_position(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_type: Error)
+                 -> Result<(f64, u32, Optimistic), Pessimistic> {
+    let (mut xu, mut xl) = if _xu > _xl {
+        (_xu, _xl)
+    } else {
+        (_xl, _xu)
+    };
+    let (mut yu, mut yl) = (f(xu), f(xl));
+    if yu == 0f64 {
+        return Ok((xu, 0, Optimistic::RootFound));
+    }
+    if yl == 0f64 {
+        return Ok((xl, 0, Optimistic::RootFound));
+    }
+    if yu*yl > 0f64 {
+        return Err(Pessimistic::InvalidInput);
+    }
+    let mut xm = xl - yl * (xu - xl)/(yu - yl);
+    let (mut err, mut ym): (f64, f64) = (Float::infinity(), f(xm));
+    let mut i = 1u32;
+    let mut xaux: f64 = 0f64;
+    while ym != 0f64 && err > tol && i < n {
+        if yl * ym < 0f64 {
+            xu = xm;
+            yu = ym;
+        } else {
+            xl = xm;
+            yl = ym;
+        }
+        xaux = xm;
+        xm = xl - yl * (xu - xl)/(yu - yl);
+        ym = f(xm);
+        err = if error_type == Error::Relative && abs(xm) > Float::epsilon() {
+            abs((xm - xaux)/xm)
+        } else {
+            abs(xm - xaux)
+        };
+        i += 1;
+    }
+    if ym == 0f64 {
+        return Ok((xm, i, Optimistic::RootFound));
+    }
+    if err < tol {
+        return Ok((xm, i, Optimistic::RootApproxFound));
+    }
+    Err(Pessimistic::MaxIterationsReached)
+
+}
+
+pub fn fixed_point(f: fn(f64)->f64, g: fn(f64)->f64, _xa: f64,  tol: f64, n:u32, error_type: Error)
+                      -> Result<(f64, u32, Optimistic), Pessimistic> {
+    let mut xa = _xa;
+    let mut y = f(xa);
+    let mut err: f64 = Float::infinity();
+    let mut i = 0u32;
+    let mut xn = 0f64;
+    while y != 0f64 && err > tol && i < n {
+        xn = g(xa);
+        y = f(xn);
+        err = if error_type == Error::Relative && abs(xn) > Float::epsilon() {
+            abs((xn - xa)/xn)
+        } else {
+            abs(xn - xa)
+        };
+        xa = xn;
+        i += 1;
+    }
+    if y == 0f64 {
+        return Ok((xa, i, Optimistic::RootFound));
+    }
+    if err < tol {
+        return Ok((xa, i, Optimistic::RootApproxFound));
+    }
+    Err(Pessimistic::MaxIterationsReached)
+
 }
 
 
+/*
 //Incremental Search
 
 #[derive(Debug)]
@@ -122,7 +279,6 @@ impl RunnableMethod for IncrementalSearch {
 
 
 //Bisection
-//TODO
 
 #[derive(Debug)]
 pub struct Bisection {
@@ -222,4 +378,4 @@ impl RunnableMethod for Bisection {
         false
     }
 
-}
+} */
