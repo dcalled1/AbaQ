@@ -1,4 +1,6 @@
 use num_traits::{Float, abs};
+use std::fmt;
+use std::fmt::Display;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Pessimistic {
@@ -29,7 +31,8 @@ pub struct Log {
     i: u32
 }
 pub struct Logbook {
-    regs: Vec<Log>
+    head: Vec<String>,
+    regs: Vec<Log>,
 }
 
 impl Log {
@@ -39,12 +42,37 @@ impl Log {
 }
 
 impl Logbook {
-    fn new(n: u32) -> Logbook {
-        Logbook{regs: Vec::with_capacity(n as usize)}
+    fn new(n: u32, head: Vec<String>) -> Logbook {
+        Logbook{regs: Vec::with_capacity(n as usize), head}
     }
 
     fn registry(&mut self, i: u32, vars: Vec<f64>) {
         self.regs.push(Log::new(i, vars));
+    }
+}
+
+impl fmt::Display for Log {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut s = String::new();
+        for v in &self.vars {
+            s.push_str(format!(" {:^30} ", v).as_str());
+        }
+        s.push('\n');
+        write!(f, "{}", s)
+    }
+}
+
+impl fmt::Display for Logbook {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut s = String::new();
+        for v in &self.head {
+            s.push_str(format!(" {:^30} ", v).as_str());
+        }
+        s.push('\n');
+        for v in &self.regs {
+            s.push_str(format!(" {:^15} ", v).as_str());
+        }
+        write!(f, "{}", s)
     }
 }
 /*
@@ -83,7 +111,9 @@ pub fn incremental_search(f: fn(f64)->f64, x0: f64, dx: f64, n:u32)
 }
 
 pub fn bisection(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_type: Error)
-                          -> Result<(f64, u32, Optimistic), Pessimistic> {
+                          -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xl".into(), "xm".into(), "xu".into(),
+                                           "yl".into(), "ym".into(), "yu".into(), "error".into()]);
     let (mut xu, mut xl) = if _xu > _xl {
         (_xu, _xl)
     } else {
@@ -91,17 +121,18 @@ pub fn bisection(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_typ
     };
     let (mut yu, mut yl) = (f(xu), f(xl));
     if yu == 0f64 {
-        return Ok((xu, 0, Optimistic::RootFound));
+        return (Ok((xu, 0, Optimistic::RootFound)), logbook);
     }
     if yl == 0f64 {
-        return Ok((xl, 0, Optimistic::RootFound));
+        return (Ok((xl, 0, Optimistic::RootFound)), logbook);
     }
     if yu*yl > 0f64 {
-        return Err(Pessimistic::InvalidInput);
+        return (Err(Pessimistic::InvalidInput), logbook);
     }
     let mut xm = (xl + xu)/2f64;
     let (mut err, mut ym): (f64, f64) = (Float::infinity(), f(xm));
     let mut i = 1u32;
+    logbook.registry(i, vec![xl, xm, xu, yl, ym, yu, err]);
     let mut xaux: f64 = 0f64;
     while ym != 0f64 && err > tol && i < n {
         if yl * ym < 0f64 {
@@ -120,19 +151,22 @@ pub fn bisection(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_typ
             abs(xm - xaux)
         };
         i += 1;
+        logbook.registry(i, vec![xl, xm, xu, yl, ym, yu, err]);
     }
     if ym == 0f64 {
-        return Ok((xm, i, Optimistic::RootFound));
+        return (Ok((xm, i, Optimistic::RootFound)), logbook);
     }
-    if err < tol {
-        return Ok((xm, i, Optimistic::RootApproxFound));
+    if err <= tol {
+        return (Ok((xm, i, Optimistic::RootApproxFound)), logbook);
     }
-    Err(Pessimistic::MaxIterationsReached)
+    (Err(Pessimistic::MaxIterationsReached), logbook)
 
 }
 
 pub fn false_position(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_type: Error)
-                 -> Result<(f64, u32, Optimistic), Pessimistic> {
+                 -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xl".into(), "xm".into(), "xu".into(),
+                                           "yl".into(), "ym".into(), "yu".into(), "error".into()]);
     let (mut xu, mut xl) = if _xu > _xl {
         (_xu, _xl)
     } else {
@@ -140,17 +174,18 @@ pub fn false_position(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, erro
     };
     let (mut yu, mut yl) = (f(xu), f(xl));
     if yu == 0f64 {
-        return Ok((xu, 0, Optimistic::RootFound));
+        return (Ok((xu, 0, Optimistic::RootFound)), logbook);
     }
     if yl == 0f64 {
-        return Ok((xl, 0, Optimistic::RootFound));
+        return (Ok((xl, 0, Optimistic::RootFound)), logbook);
     }
     if yu*yl > 0f64 {
-        return Err(Pessimistic::InvalidInput);
+        return (Err(Pessimistic::InvalidInput), logbook);
     }
     let mut xm = xl - yl * (xu - xl)/(yu - yl);
     let (mut err, mut ym): (f64, f64) = (Float::infinity(), f(xm));
     let mut i = 1u32;
+    logbook.registry(i, vec![xl, xm, xu, yl, ym, yu, err]);
     let mut xaux: f64 = 0f64;
     while ym != 0f64 && err > tol && i < n {
         if yl * ym < 0f64 {
@@ -169,23 +204,26 @@ pub fn false_position(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, erro
             abs(xm - xaux)
         };
         i += 1;
+        logbook.registry(i, vec![xl, xm, xu, yl, ym, yu, err]);
     }
     if ym == 0f64 {
-        return Ok((xm, i, Optimistic::RootFound));
+        return (Ok((xm, i, Optimistic::RootFound)), logbook);
     }
-    if err < tol {
-        return Ok((xm, i, Optimistic::RootApproxFound));
+    if err <= tol {
+        return (Ok((xm, i, Optimistic::RootApproxFound)), logbook);
     }
-    Err(Pessimistic::MaxIterationsReached)
+    (Err(Pessimistic::MaxIterationsReached), logbook)
 
 }
 
 pub fn fixed_point(f: fn(f64)->f64, g: fn(f64)->f64, _xa: f64,  tol: f64, n:u32, error_type: Error)
-                      -> Result<(f64, u32, Optimistic), Pessimistic> {
+                      -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xi".into(), "yi".into(), "error".into()]);
     let mut xa = _xa;
     let mut y = f(xa);
     let mut err: f64 = Float::infinity();
     let mut i = 0u32;
+    logbook.registry(i, vec![xa, y, err]);
     let mut xn = 0f64;
     while y != 0f64 && err > tol && i < n {
         xn = g(xa);
@@ -197,17 +235,289 @@ pub fn fixed_point(f: fn(f64)->f64, g: fn(f64)->f64, _xa: f64,  tol: f64, n:u32,
         };
         xa = xn;
         i += 1;
+        logbook.registry(i, vec![xa, y, err]);
     }
     if y == 0f64 {
-        return Ok((xa, i, Optimistic::RootFound));
+        return (Ok((xa, i, Optimistic::RootFound)), logbook);
     }
-    if err < tol {
-        return Ok((xa, i, Optimistic::RootApproxFound));
+    if err <= tol {
+        return (Ok((xa, i, Optimistic::RootApproxFound)), logbook);
     }
-    Err(Pessimistic::MaxIterationsReached)
+    (Err(Pessimistic::MaxIterationsReached), logbook)
 
 }
 
+pub fn newton(f: fn(f64)->f64, df: fn(f64)->f64, _xa: f64,  tol: f64, n:u32, error_type: Error)
+                   -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xi".into(), "yi".into(), "y\'i".into(), "error".into()]);
+    let mut xa = _xa;
+    let (mut y, mut dy) = (f(xa), df(xa));
+    let mut err: f64 = Float::infinity();
+    let mut i = 0u32;
+    logbook.registry(i, vec![xa, y, dy, err]);
+    let mut xn = 0f64;
+    while y != 0f64 && dy != 0f64 && err > tol && i < n {
+        xn = xa - y/dy;
+        y = f(xn);
+        dy = df(xn);
+        err = if error_type == Error::Relative && abs(xn) > Float::epsilon() {
+            abs((xn - xa)/xn)
+        } else {
+            abs(xn - xa)
+        };
+        xa = xn;
+        i += 1;
+        logbook.registry(i, vec![xa, y, dy, err]);
+    }
+    if y == 0f64 {
+        return (Ok((xa, i, Optimistic::RootFound)), logbook);
+    }
+    if err <= tol {
+        return (Ok((xa, i, Optimistic::RootApproxFound)), logbook);
+    }
+    if dy == 0f64 {
+        return (Err(Pessimistic::MultipleRoot), logbook);
+    }
+    (Err(Pessimistic::MaxIterationsReached), logbook)
+}
+
+pub fn secant(f: fn(f64)->f64, _x0: f64, _x1: f64,  tol: f64, n:u32, error_type: Error)
+              -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xi".into(), "yi".into(), "error".into()]);
+    let (mut x0, mut x1) = (_x0, _x1);
+    let mut y0 = f(x0);
+    if y0 == 0f64 {
+        return (Ok((x0, 0, Optimistic::RootFound)), logbook)
+    }
+    let mut y1 = f(x1);
+    let mut err: f64 = Float::infinity();
+    let mut i = 1u32;
+    let mut x2 = 0f64;
+    logbook.registry(0, vec![x0, y0, err]);
+    logbook.registry(1, vec![x1, y1, err]);
+    while y1 != 0f64 && y1 != y0 && err > tol && i < n {
+        x2 = x1 - y1 * (x1 - x0)/(y1 - y0);
+        err = if error_type == Error::Relative && abs(x2) > Float::epsilon() {
+            abs((x2 - x1)/x2)
+        } else {
+            abs(x2 - x1)
+        };
+        x0 = x1;
+        y0 = y1;
+        x1 = x2;
+        y1 = f(x1);
+        i += 1;
+        logbook.registry(i, vec![x1, y1, err]);
+    }
+    if y1 == 0f64 {
+        return (Ok((x1, i, Optimistic::RootFound)), logbook);
+    }
+    if err <= tol {
+        return (Ok((x1, i, Optimistic::RootApproxFound)), logbook);
+    }
+    if y0 == y1 {
+        return (Err(Pessimistic::MultipleRoot), logbook);
+    }
+    (Err(Pessimistic::MaxIterationsReached), logbook)
+}
+
+
+pub fn multiple_root(f: fn(f64)->f64, df: fn(f64)->f64, d2f: fn(f64)->f64,_xa: f64,  tol: f64,
+                     n:u32, error_type: Error)
+                     -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xi".into(), "yi".into(), "y\'i".into(),
+                                           "y\'\'i".into(), "error".into()]);
+    let mut xa = _xa;
+    let (mut y, mut dy, mut d2y) = (f(xa), df(xa), d2f(xa));
+    let mut err: f64 = Float::infinity();
+    let mut i = 0u32;
+    logbook.registry(i, vec![xa, y, dy, d2y, err]);
+    let mut xn = 0f64;
+    while y != 0f64 && dy.powi(2) != y * d2y && err > tol && i < n {
+        xn = xa - y * dy /(dy.powi(2) - y * d2y);
+        y = f(xn);
+        dy = df(xn);
+        d2y = d2f(xn);
+        err = if error_type == Error::Relative && abs(xn) > Float::epsilon() {
+            abs((xn - xa)/xn)
+        } else {
+            abs(xn - xa)
+        };
+        xa = xn;
+        i += 1;
+        logbook.registry(i, vec![xa, y, dy, d2y, err]);
+    }
+    if y == 0f64 {
+        return (Ok((xa, i, Optimistic::RootFound)), logbook);
+    }
+    if err <= tol {
+        return (Ok((xa, i, Optimistic::RootApproxFound)), logbook);
+    }
+    if dy.powi(2) == y * d2y {
+        return (Err(Pessimistic::DivBy0), logbook);
+    }
+    (Err(Pessimistic::MaxIterationsReached), logbook)
+}
+
+
+pub fn steffensen(f: fn(f64)->f64, _xa: f64,  tol: f64, n:u32, error_type: Error)
+              -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xi".into(), "yi".into(), "z\'i".into(),
+                                           "error".into()]);
+    let mut xa = _xa;
+    let mut y = f(xa);
+    let mut z = f(xa + y);
+    let mut err: f64 = Float::infinity();
+    let mut i = 0u32;
+    logbook.registry(i, vec![xa, y, z, err]);
+    let mut xn = 0f64;
+    while y != 0f64 && y != z && err > tol && i < n {
+        xn = xa - y.powi(2)/(z - y);
+        y = f(xn);
+        z = f(xn + y);
+        err = if error_type == Error::Relative && abs(xn) > Float::epsilon() {
+            abs((xn - xa)/xn)
+        } else {
+            abs(xn - xa)
+        };
+        xa = xn;
+        i += 1;
+        logbook.registry(i, vec![xa, y, z, err]);
+    }
+    if y == 0f64 {
+        return (Ok((xa, i, Optimistic::RootFound)), logbook);
+    }
+    if err <= tol {
+        return (Ok((xa, i, Optimistic::RootApproxFound)), logbook);
+    }
+    if y == z {
+        return (Err(Pessimistic::MultipleRoot), logbook);
+    }
+    (Err(Pessimistic::MaxIterationsReached), logbook)
+}
+
+
+pub fn muller(f: fn(f64)->f64, _x0: f64, _x1: f64, _x2: f64, tol: f64, n:u32, error_type: Error)
+              -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xi".into(), "yi".into(), "error".into()]);
+    let (mut x0, mut x1, mut x2) = (_x0, _x1, _x2);
+    let mut y0 = f(x0);
+    if y0 == 0f64 {
+        return (Ok((x0, 0, Optimistic::RootFound)), logbook)
+    }
+    let mut y1 = f(x1);
+    if y1 == 0f64 {
+        return (Ok((x1, 0, Optimistic::RootFound)), logbook)
+    }
+    let mut y2 = f(x2);
+    let (mut h0, mut h1) = (x1 - x0, x2 - x1);
+    if h0 == 0f64 || h1 == 0f64 {
+        return (Err(Pessimistic::DivBy0), logbook);
+    }
+    let (mut d0, mut d1) = ((y1 - y0)/h0, (y2 - y2)/h1);
+    if abs(h1 + h0) < Float::epsilon() {
+        return (Err(Pessimistic::DivBy0), logbook);
+    }
+    let mut a = (d1 - d0)/(h1 + h0);
+    let mut b = a * h1 + d1;
+    let mut err: f64 = Float::infinity();
+    let mut i = 2u32;
+    logbook.registry(0, vec![x0, y0, err]);
+    logbook.registry(1, vec![x1, y1, err]);
+    logbook.registry(2, vec![x2, y2, err]);
+    let mut x3 = 0f64;
+    while y2 != 0f64 && b.powi(2) >= 4f64 * a * y2
+        && x0 != x1 && x1 != x2 && x0 != x2 && err > tol && i < n {
+        x3 = if b < 0f64 {
+            x2 + 2f64 * y2 / (b - (b.powi(2) - 4f64 * a * y2).sqrt())
+        } else {
+            x2 + 2f64 * y2 / (b + (b.powi(2) - 4f64 * a * y2).sqrt())
+        };
+        err = if error_type == Error::Relative && abs(x3) > Float::epsilon() {
+            abs((x3 - x2)/x3)
+        } else {
+            abs(x3 - x2)
+        };
+        x0 = x1;
+        y0 = y1;
+        x1 = x2;
+        y1 = y2;
+        x2 = x3;
+        y2 = f(x2);
+        i += 1;
+        logbook.registry(i, vec![x2, y2, err]);
+    }
+    if y1 == 0f64 {
+        return (Ok((x2, i, Optimistic::RootFound)), logbook);
+    }
+    if err <= tol {
+        return (Ok((x2, i, Optimistic::RootApproxFound)), logbook);
+    }
+    if x0 == x1 || x1 == x2 || x0 == x2 {
+        return (Err(Pessimistic::MultipleRoot), logbook);
+    }
+    if b.powi(2) < 4f64 * a * y2 {
+        return (Err(Pessimistic::ComplexRoot), logbook);
+    }
+    (Err(Pessimistic::MaxIterationsReached), logbook)
+}
+
+pub fn accelerated_fixed_point(f: fn(f64)->f64, g: fn(f64)->f64, _x0: f64,
+                               tol: f64, n:u32, error_type: Error)
+                                -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
+    let mut logbook = Logbook::new(n, vec!["xi".into(), "yi".into(), "error".into()]);
+    let mut x0 = _x0;
+    let mut x1 = g(x0);
+    let mut x2 = g(x1);
+    logbook.registry(0, vec![x0, f(x0), Float::infinity()]);
+    logbook.registry(1, vec![x1, f(x1), if error_type == Error::Relative && abs(x1) > Float::epsilon() {
+                    abs((x1 - x0)/x1)
+                } else {
+                    abs(x1 - x0)
+                }]);
+    logbook.registry(2, vec![x2, f(x2), if error_type == Error::Relative && abs(x2) > Float::epsilon() {
+                    abs((x2 - x1)/x2)
+                } else {
+                    abs(x2 - x1)
+                }]);
+    if x2 + x0 == 2f64 * x1 {
+        return (Err(Pessimistic::DivBy0), logbook);
+    }
+    let mut x3 = x2 - (x2 - x1).powi(2)/(x2 - 2f64 * x1 + x0);
+    let mut y = f(x3);
+    let mut err: f64 = if error_type == Error::Relative && abs(x3) > Float::epsilon() {
+        abs((x3 - x2)/x3)
+    } else {
+        abs(x3 - x2)
+    };
+    let mut i = 3u32;
+    logbook.registry(i, vec![x3, y, err]);
+    while y != 0f64 && err > tol && i < n {
+        x0 = x3;
+        x1 = g(x0);
+        x2 = g(x1);
+        if x2 + x0 == 2f64 * x1 {
+            return (Err(Pessimistic::DivBy0), logbook);
+        }
+        x3 = x2 - (x2 - x1).powi(2)/(x2 - 2f64 * x1 + x0);
+        y = f(x3);
+        err = if error_type == Error::Relative && abs(x3) > Float::epsilon() {
+            abs((x3 - x2)/x3)
+        } else {
+            abs(x3 - x2)
+        };
+        i += 1;
+        logbook.registry(i, vec![x3, y, err]);
+    }
+    if y == 0f64 {
+        return (Ok((x3, i, Optimistic::RootFound)), logbook);
+    }
+    if err <= tol {
+        return (Ok((x3, i, Optimistic::RootApproxFound)), logbook);
+    }
+    (Err(Pessimistic::MaxIterationsReached), logbook)
+
+}
 
 /*
 //Incremental Search
