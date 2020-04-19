@@ -1,7 +1,9 @@
-use crate::single_var::*;
+mod root_finding;
+use root_finding::methods::*;
+use crate::root_finding::utilities::Error;
+
 use std::f64;
 
-mod single_var;
 
 fn main() {
     {

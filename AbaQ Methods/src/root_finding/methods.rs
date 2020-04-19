@@ -1,80 +1,8 @@
 use num_traits::{Float, abs};
-use std::fmt;
-use std::fmt::Display;
-
-#[derive(Debug, Copy, Clone)]
-pub enum Pessimistic {
-    MaxIterationsReached,
-    DivBy0,
-    FunctionOutOfDomain,
-    ComplexRoot,
-    MultipleRoot,
-    InvalidInput,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub enum Optimistic {
-    RootFound,
-    RootApproxFound,
-    IntervalFound,
-}
-
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum Error {
-    Absolute,
-    Relative
-}
+use crate::root_finding::register::Logbook;
+use crate::root_finding::utilities::{Optimistic, Pessimistic, Error, calc_error};
 
 
-pub struct Log {
-    vars: Vec<f64>,
-    i: u32
-}
-pub struct Logbook {
-    head: Vec<String>,
-    regs: Vec<Log>,
-}
-
-impl Log {
-    fn new(i: u32, vars: Vec<f64>) -> Log {
-        Log{i, vars}
-    }
-}
-
-impl Logbook {
-    fn new(n: u32, head: Vec<String>) -> Logbook {
-        Logbook{regs: Vec::with_capacity(n as usize), head}
-    }
-
-    fn registry(&mut self, i: u32, vars: Vec<f64>) {
-        self.regs.push(Log::new(i, vars));
-    }
-}
-
-impl fmt::Display for Log {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut s = String::new();
-        for v in &self.vars {
-            s.push_str(format!(" {:^30} ", v).as_str());
-        }
-        s.push('\n');
-        write!(f, "{}", s)
-    }
-}
-
-impl fmt::Display for Logbook {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut s = String::new();
-        for v in &self.head {
-            s.push_str(format!(" {:^30} ", v).as_str());
-        }
-        s.push('\n');
-        for v in &self.regs {
-            s.push_str(format!(" {:^15} ", v).as_str());
-        }
-        write!(f, "{}", s)
-    }
-}
 /*
 pub trait RunnableMethod {
     fn run(&mut self) -> Logbook;
@@ -145,11 +73,7 @@ pub fn bisection(f: fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_typ
         xaux = xm;
         xm = (xl + xu)/2f64;
         ym = f(xm);
-        err = if error_type == Error::Relative && abs(xm) > Float::epsilon() {
-            abs((xm - xaux)/xm)
-        } else {
-            abs(xm - xaux)
-        };
+        err = calc_error(xm, xaux, error_type);
         i += 1;
         logbook.registry(i, vec![xl, xm, xu, yl, ym, yu, err]);
     }
