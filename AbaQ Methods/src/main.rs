@@ -7,13 +7,13 @@ use std::f64;
 
 fn main() {
     {
-        let f = |x: f64| x.sin().powi(2).ln_1p() - 0.5;
-        let df = |x: f64| x.sin() * x.cos() * 2f64 * (x.sin().powi(2) + 1f64).powi(-1);
-        let f1 = |x: f64| x.sin().powi(2).ln_1p() - 0.5 - x;
-        let g = |x: f64| x.sin().powi(2).ln_1p() - 0.5;
-        let h = |x: f64| x.exp() - x - 1f64;
-        let dh = |x: f64| x.exp() - 1f64;
-        let d2h = |x: f64| x.exp();
+        let f = |x: f64| Ok(x.sin().powi(2).ln_1p() - 0.5);
+        let df = |x: f64| Ok(x.sin() * x.cos() * 2f64 * (x.sin().powi(2) + 1f64).powi(-1));
+        let f1 = |x: f64| Ok(x.sin().powi(2).ln_1p() - 0.5 - x);
+        let g = |x: f64| Ok(x.sin().powi(2).ln_1p() - 0.5);
+        let h = |x: f64| Ok(x.exp() - x - 1f64);
+        let dh = |x: f64| Ok(x.exp() - 1f64);
+        let d2h = |x: f64| Ok(x.exp());
         let tol = 1e-7f64;
         let n = 100;
         let et = Error::Absolute;
@@ -33,7 +33,7 @@ fn main() {
         println!("Multiple roots:{:?}\n{}\n", &mr, mrlog);
         let (st, stlog) = steffensen(f, 0.5, tol, n, et);
         println!("Steffensen: {:?}\n{}\n", &st, stlog);
-        let (ml, mllog) = muller(f, 0.5, 1f64, 1.5, tol, n, et);
+        let (ml, mllog) = muller(f, 1., 2., 3., tol, n, et);
         println!("Muller: {:?}\n{}\n", &ml, mllog);
         let (apf, apflog) = accelerated_fixed_point(f1, g, -0.5, tol, n, et);
         println!("Aitken: {:?}\n{}\n", &apf, apflog);

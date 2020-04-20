@@ -28,6 +28,7 @@ impl Logbook {
 impl fmt::Display for Log {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = String::new();
+        s.push_str(format!(" {:^5} ", self.i).as_str());
         for v in &self.vars {
             s.push_str(format!(" {:^30} ", v).as_str());
         }
@@ -39,6 +40,7 @@ impl fmt::Display for Log {
 impl fmt::Display for Logbook {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = String::new();
+        s.push_str(format!(" {:^5} ", "i").as_str());
         for v in &self.head {
             s.push_str(format!(" {:^30} ", v).as_str());
         }
