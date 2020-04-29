@@ -31,5 +31,3 @@ pub(crate) fn calc_error(x_prev: f64, x_act: f64, error_type: Error) -> f64 {
         abs(x_act - x_prev)
     }
 }
-
-

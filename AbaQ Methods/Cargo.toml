@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 num-traits = "0.2.11"
+nalgebra = "0.21"
