@@ -55,6 +55,16 @@ fn forward_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result
     Ok(x)
 }
 
+fn eliminate(m: &mut Array2<f64>, k: usize) -> Array1<f64>{
+    let row_k = Zip::from(m.slice_mut(s![k, k..])).par_apply_collect(|x| *x);
+    Zip::from(m.slice_mut(s![k+1.., k..]).genrows_mut())
+        .par_apply_collect(|mut row_i| {
+            let mul = row_i[0]/row_k[0];
+            Zip::indexed(row_i).par_apply(|j, mut e| *e -= mul * row_k[j]);
+            mul
+        })
+}
+
 pub fn simple_elimination(m: &Array2<f64>) -> Result<Array2<f64>, Error> {
     let n = m.nrows();
     let mut new_m = Array2::<f64>::zeros((n, n));
@@ -69,13 +79,7 @@ pub fn simple_elimination(m: &Array2<f64>) -> Result<Array2<f64>, Error> {
                 }
             }
         }
-        let row_k = Zip::from(new_m.slice_mut(s![k, k..])).par_apply_collect(|x| *x);
-        let mults = Zip::from(new_m.slice_mut(s![k+1.., k..]).genrows_mut())
-            .par_apply_collect(|mut row_i| {
-                let mul = row_i[0]/row_k[0];
-                Zip::indexed(row_i).par_apply(|j, mut e| *e -= mul * row_k[j]);
-                mul
-            });
+        let mults = eliminate(&mut new_m, k);
         println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_m, mults);
     }
     Ok(new_m)
@@ -101,23 +105,17 @@ pub fn elimination_with_partial_pivoting(m: &Array2<f64>) -> Result<Array2<f64>,
         if max_row != k {
             swap_rows(&mut new_m, max_row, k, k);
         }
-        let row_k = Zip::from(new_m.slice_mut(s![k, k..])).par_apply_collect(|x| *x);
-        let mults = Zip::from(new_m.slice_mut(s![k+1.., k..]).genrows_mut())
-            .par_apply_collect(|mut row_i| {
-                let mul = row_i[0]/row_k[0];
-                Zip::indexed(row_i).par_apply(|j, mut e| *e -= mul * row_k[j]);
-                mul
-            });
+        let mults = eliminate(&mut new_m, k);
         println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_m, mults);
     }
     Ok(new_m)
 }
 
-pub fn elimination_with_total_pivoting(m: &Array2<f64>) -> Result<Array2<f64>, Error> {
+pub fn elimination_with_total_pivoting(m: &Array2<f64>) -> Result<(Array2<f64>, Array1<usize>), Error> {
     let n = m.nrows();
     let mut new_m = Array2::<f64>::zeros((n, n));
     new_m.clone_from(m);
-    let mut marks = Array1::<f64>::linspace(0., (n - 1) as f64, n);
+    let mut marks = Array1::<usize>::from((0..n).collect::<Vec<usize>>());
     println!("{} \nmarks:\n{}", new_m, marks);
     for k in 0..n-1 {
         let (mut max, mut max_row, mut max_col) = (0., k, k);
@@ -141,16 +139,10 @@ pub fn elimination_with_total_pivoting(m: &Array2<f64>) -> Result<Array2<f64>, E
             swap_entire_cols(&mut new_m, max_col, k);
             marks.swap(max_col, k);
         }
-        let row_k = Zip::from(new_m.slice_mut(s![k, k..])).par_apply_collect(|x| *x);
-        let mults = Zip::from(new_m.slice_mut(s![k+1.., k..]).genrows_mut())
-            .par_apply_collect(|mut row_i| {
-                let mul = row_i[0]/row_k[0];
-                Zip::indexed(row_i).par_apply(|j, mut e| *e -= mul * row_k[j]);
-                mul
-            });
+        let mults = eliminate(&mut new_m, k);
         println!("k: {}\nU: \n{}\nmults:\n{}\nmarks:\n{}\n----------", k, new_m, mults, marks);
     }
-    Ok(new_m)
+    Ok((new_m, marks))
 }
 
 pub fn simple_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>), Error> {
@@ -180,5 +172,41 @@ pub fn simple_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64
         println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_m, mults);
     }
     Ok((new_m, mults))
+}
+
+pub fn pivoting_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>, Array1<usize>), Error> {
+    let n = m.nrows();
+    let mut mults = Array2::<f64>::eye(n);
+    let mut new_m = Array2::<f64>::zeros((n, n));
+    new_m.clone_from(m);
+    let mut marks = Array1::<usize>::from((0..n).collect::<Vec<usize>>());
+    println!("{}", new_m);
+    for k in 0..n-1 {
+        let (mut max, mut max_row) = (new_m[(k, k)].abs(), k);
+        for s in k+1..n {
+            let tmp = new_m[(s, k)].abs();
+            if tmp > max {
+                max = tmp;
+                max_row = s;
+            }
+        }
+        if max == 0. {
+            return Err(Error::MultipleSolution);
+        }
+        if max_row != k {
+            swap_rows(&mut new_m, max_row, k, k);
+            marks.swap(max_row, k);
+        }
+        let row_k = Zip::from(new_m.slice_mut(s![k, k..])).par_apply_collect(|x| *x);
+        Zip::from(new_m.slice_mut(s![k+1.., k..]).genrows_mut())
+            .and(mults.slice_mut(s![k+1.., k]))
+            .par_apply(|mut row_i, mut mul_slot| {
+                let mul = row_i[0]/row_k[0];
+                *mul_slot = mul;
+                Zip::indexed(row_i).par_apply(|j, mut e| *e -= mul * row_k[j]);
+            });
+        println!("k: {}\nU: \n{}\nmults:\n{}\nmarks:\n{}\n----------", k, new_m, mults, marks);
+    }
+    Ok((new_m, mults, marks))
 }
 

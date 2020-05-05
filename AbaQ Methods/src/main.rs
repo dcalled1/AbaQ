@@ -43,11 +43,11 @@ fn main() {
         println!("Aitken: {:?}\n{}\n", &apf, apflog);
     }*/
     {
-        let mat = array![[-7f64, 2., -3., 4., -12.,],
-                         [5., -1., 14., -1., 13.,],
-                         [1., 9., -7., 13., 31.,],
-                         [-12., 13., -8., -4., -32.,],];
-        elimination_with_total_pivoting(&mat);
+        let mat = array![[-7f64, 2., -3., 4.,],
+                         [5., -1., 14., -1.,],
+                         [1., 9., -7., 13.,],
+                         [-12., 13., -8., -4.,],];
+        pivoting_elimination_lu(&mat);
 
 
     }
