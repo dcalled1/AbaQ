@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 num-traits = "0.2.11"
 nalgebra = "0.21"
+ndarray = {version = "0.13.1", features = ["rayon"]}

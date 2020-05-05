@@ -6,7 +6,7 @@ mod linear_equations;
 use linear_equations::methods::*;
 
 use std::f64;
-use nalgebra::{DMatrix, DVector};
+use ndarray::prelude::*;
 
 
 fn main() {
@@ -43,19 +43,13 @@ fn main() {
         println!("Aitken: {:?}\n{}\n", &apf, apflog);
     }*/
     {
-        /*let matr = vec![
-            14f64, 0., 0., 0.,
-            6., 13.71, 0., 0.,
-            -2., 2.42, -25.23, 0.,
-            3., -5.64, 6.38, 14.05,
-        ];*/
-        let matr = vec![
-            14.05, 6.38, -5.64, 3.,
-            0., -25.23, 2.42, -2.,
-            0., 0., 13.71, 6.,
-            0., 0., 0., 14.,
-        ];
-        let vect = vec![22.13, -33.02, 29.42, 12f64, ];
+        let mat = array![[-7f64, 2., -3., 4., -12.,],
+                         [5., -1., 14., -1., 13.,],
+                         [1., 9., -7., 13., 31.,],
+                         [-12., 13., -8., -4., -32.,],];
+        elimination_with_total_pivoting(&mat);
+
+
     }
 
 }
