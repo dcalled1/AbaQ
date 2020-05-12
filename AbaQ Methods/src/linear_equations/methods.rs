@@ -1,10 +1,13 @@
-use num_traits::{Zero};
-use nalgebra::{ComplexField};
-use crate::linear_equations::utilities::{Error, swap_rows, swap_entire_cols};
+use num_traits::{Zero, One};
+use nalgebra::{ComplexField, Complex};
+use crate::linear_equations::utilities::{Error, swap_rows, swap_entire_cols, FactorizationType, IterationType, spectral_radius};
 use ndarray::{Array2, Array1, Zip};
 use ndarray::prelude::*;
 use ndarray::parallel::prelude::*;
 use std::mem;
+use num_traits::float::FloatCore;
+use ndarray_linalg::norm::*;
+use ndarray_linalg::Inverse;
 
 fn back_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
     if !A.is_square() {
@@ -31,7 +34,7 @@ fn back_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result<Ar
 
 }
 
-fn forward_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
+pub(crate) fn forward_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
     if !A.is_square() {
         return Err(Error::BadIn);
     }
@@ -41,6 +44,7 @@ fn forward_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result
         return Err(Error::DivBy0);
     }
     x[0] = b[0]/A[(0, 0)];
+    println!("{}", x);
     let mut sum: T;
     for i in 1..=n-1 {
         sum = T::zero();
@@ -51,6 +55,8 @@ fn forward_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result
             return Err(Error::DivBy0);
         }
         x[i] = (b[i] - sum)/A[(i, i)];
+
+        println!("{}", x);
     }
     Ok(x)
 }
@@ -209,4 +215,200 @@ pub fn pivoting_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f
     }
     Ok((new_m, mults, marks))
 }
+
+pub fn direct_factorization(m: &Array2<f64>, method: FactorizationType) -> Result<(Array2<f64>, Array2<f64>), Error> {
+    if !m.is_square() {
+        return Err(Error::BadIn);
+    }
+    let n = m.nrows();
+    let (mut l, mut u) = (Array2::<f64>::eye(n), Array2::<f64>::eye(n));
+    let mut sum: f64;
+    for k in 0..n {
+        sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, k])).fold(0., |ac, el, eu| ac + el * eu );
+        let val = m[(k, k)] - sum;
+        if val.is_zero() {
+            return Err(Error::DivBy0);
+        }
+        l[(k, k)] = match method {
+            FactorizationType::Crout => val,
+            FactorizationType::Doolittle => 1.,
+            FactorizationType::Cholesky => {
+                if val < 0. {
+                    return Err(Error::ComplexNumber);
+                }
+                val.sqrt()
+            },
+        };
+        u[(k, k)] = match method {
+            FactorizationType::Doolittle => val,
+            FactorizationType::Crout => 1.,
+            FactorizationType::Cholesky => {
+                if val < 0. {
+                    return Err(Error::ComplexNumber);
+                }
+                val.sqrt()
+            },
+        };
+
+        for i in k+1..n {
+            sum = Zip::from(l.slice(s![i, ..k])).and(u.slice(s![..k, k]))
+                .fold(0., |ac, el, eu| ac + el * eu );
+            l[(i, k)] = (m[(i, k)]-sum)/u[(k, k)];
+        }
+
+        for i in k+1..n {
+            sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, i]))
+                .fold(0., |ac, el, eu| ac + el * eu );
+            u[(k, i)] = (m[(k, i)]-sum)/l[(k, k)];
+        }
+    }
+
+    Ok((l, u))
+}
+
+pub fn direct_factorization_with_complex(m: &Array2<f64>) -> Result<(Array2<Complex<f64>>, Array2<Complex<f64>>), Error> {
+    let n = m.nrows();
+    let (mut l, mut u) = (Array2::<Complex<f64>>::eye(n), Array2::<Complex<f64>>::eye(n));
+    let mut sum: Complex<f64>;
+    for k in 0..n {
+        sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, k])).fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
+        let val = (Complex::<f64>::from_real(m[(k, k)]) - sum).sqrt();
+        if val.is_zero() {
+            return Err(Error::DivBy0);
+        }
+        l[(k, k)] = val;
+        u[(k, k)] = val;
+
+        for i in k+1..n {
+            sum = Zip::from(l.slice(s![i, ..k])).and(u.slice(s![..k, k])).fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
+            l[(i, k)] = (Complex::<f64>::from_real(m[(i, k)])-sum)/u[(k, k)];
+        }
+
+        for i in k+1..n {
+            sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, i])).fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
+            u[(k, i)] = (Complex::<f64>::from_real(m[(k, i)])-sum)/l[(k, k)];
+        }
+    }
+
+    Ok((l, u))
+}
+
+/*pub fn jacobi(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, _tol: f64, max_it: usize) -> Result<(Array1<f64>, usize), Error> {
+    let n = b.len();
+    let tol = _tol.abs();
+    let mut x0 = _x0.clone();
+    println!("0 --- {}", x0);
+    let (mut err, mut i) = (f64::infinity(), 0usize);
+    let mut x1 = Array1::<f64>::zeros(n);
+    while err > tol && i < max_it {
+        x1 = new_jacobi_set(&a, &b, &x0)?;
+        println!("{} --- {}", i+1, x1);
+        err = (&x1 - &x0).norm();
+        x0.clone_from(&x1);
+        i += 1;
+    }
+    Ok((x1, i))
+}
+
+fn new_jacobi_set(a: &Array2<f64>, b: &Array1<f64>,x: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let n = b.len();
+    let mut xn = Array1::<f64>::zeros(n);
+    let mut sum: f64;
+    for i in 0..n {
+        if a[(i, i)].is_zero() {
+            return Err(Error::DivBy0);
+        }
+        sum = Zip::from(a.slice(s![i, ..])).and(x.slice(s![..]))
+            .fold(0., |ac, a_ij, x_j| ac + a_ij * x_j) - a[(i, i)];
+        xn[i] = (b[i] - sum) / a[(i, i)];
+    }
+    Ok(xn)
+}
+
+pub fn gauss_seidel(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, w: f64, _tol: f64, max_it: usize) -> Result<(Array1<f64>, usize), Error> {
+    let n = b.len();
+    let tol = _tol.abs();
+    let mut x0 = _x0.clone();
+    println!("0 --- {}", x0);
+    let (mut err, mut i) = (f64::infinity(), 0usize);
+    let mut x1 = Array1::<f64>::zeros(n);
+    while err > tol && i < max_it {
+        x1 = new_gauss_set(&a, &b, &x0, w)?;
+        err = (&x1 - &x0).norm_l2();
+        println!("{} --- {} --- {}", i+1, x1, err);
+        x0.clone_from(&x1);
+        i += 1;
+    }
+    Ok((x1, i))
+}
+
+fn new_gauss_set(a: &Array2<f64>, b: &Array1<f64>,x: &Array1<f64>, w: f64) -> Result<Array1<f64>, Error> {
+    let n = b.len();
+    let mut xn = Array1::<f64>::zeros(n);
+    let mut sum: f64;
+    for i in 0..n {
+        if a[(i, i)].is_zero() {
+            return Err(Error::DivBy0);
+        }
+        sum = Zip::from(a.slice(s![i, ..i])).and(xn.slice(s![..i]))
+            .fold(0., |ac, a_ij, x_j| ac + a_ij * x_j);
+        sum = Zip::from(a.slice(s![i, i+1..])).and(x.slice(s![i+1..]))
+            .fold(sum, |ac, a_ij, x_j| ac + a_ij * x_j);
+        xn[i] = (1. - w) * x[i] - w * (b[i] + sum) / a[(i, i)];
+    }
+    Ok(xn)
+}*/
+
+pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: IterationType, _tol: f64, max_it: usize) -> Result<(Array1<f64>, f64), Error> {
+    let n = b.len();
+    if !a.is_square() || n != a.nrows() {
+        return Err(Error::BadIn);
+    }
+    let tol = _tol.abs();
+    let mut x_n = _x0.clone();
+    let mut x_n1 = Array1::<f64>::zeros(n);
+    let d = Array2::<f64>::from_diag(&a.diag());
+    let u = Array2::<f64>::from_shape_fn((n, n), |(i, j)| {
+        if i < j {
+            return -a[(i, j)]
+        } 0.
+    });
+    let l = Array2::<f64>::from_shape_fn((n, n), |(i, j)| {
+        if i > j {
+            return -a[(i, j)]
+        } 0.
+    });
+    let (t, c) = match method {
+        IterationType::Jacobi => {
+            let d_inv = d.inv().unwrap();
+            (d_inv.dot(&(&l + &u)), d_inv.dot(b)) },
+        IterationType::GaussSeidel => {
+            let dl_inv = (&d - &l).inv().unwrap();
+            (dl_inv.dot(&u), dl_inv.dot(b)) },
+        IterationType::SOR(w) => {
+            let dl_inv = (&(&d - &(&l * w))).inv().unwrap();
+            (dl_inv.dot(&(&(&d * (1. - w)) + &(&u * w))), dl_inv.dot(b) * w) },
+    };
+    let mut i = 0usize;
+    let mut err = f64::infinity();
+    let spec = match spectral_radius(&t) {
+        Ok(e) => e,
+        Err(_) => 0.
+    };
+    println!("{}", spec);
+    println!("{:04E} | {:^4E} | {}", i, err, x_n);
+    while err > tol && i < max_it {
+        x_n1 = &t.dot(&x_n) + &c;
+        err = (&x_n1 - &x_n).norm();
+        x_n.clone_from(&x_n1);
+        i += 1;
+        println!("{:^4} | {:.2E} | {}", i, err, x_n1);
+    }
+
+    println!("{}\n{}\n{}", d, u, l);
+
+
+    Ok((x_n1, spec))
+}
+
 
