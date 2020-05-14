@@ -1,7 +1,7 @@
-use num_traits::{Zero, One};
+use num_traits::{Zero, One, FromPrimitive};
 use nalgebra::{ComplexField, Complex};
 use crate::linear_equations::utilities::{Error, swap_rows, swap_entire_cols, FactorizationType, IterationType, spectral_radius};
-use ndarray::{Array2, Array1, Zip};
+use ndarray::{Array2, Array1, Zip, stack};
 use ndarray::prelude::*;
 use ndarray::parallel::prelude::*;
 use std::mem;
@@ -9,52 +9,52 @@ use num_traits::float::FloatCore;
 use ndarray_linalg::norm::*;
 use ndarray_linalg::Inverse;
 
-fn back_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
-    if !A.is_square() {
+fn back_substitution<T: ComplexField>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
+    if !a.is_square() {
         return Err(Error::BadIn);
     }
     let n = b.len();
     let mut x = Array1::<T>::zeros(n);
-    if A[(n - 1, n - 1)].is_zero() {
+    if a[(n - 1, n - 1)].is_zero() {
         return Err(Error::DivBy0);
     }
-    x[n-1] = b[n-1]/A[(n - 1, n - 1)];
+    x[n-1] = b[n-1]/ a[(n - 1, n - 1)];
     let mut sum: T;
     for i in (0..=n-2).rev() {
         sum = T::zero();
         for p in (i + 1) ..= (n - 1) {
-            sum += A[(i, p)] * x[p];
+            sum += a[(i, p)] * x[p];
         }
-        if A[(i, i)].is_zero() {
+        if a[(i, i)].is_zero() {
             return Err(Error::DivBy0);
         }
-        x[i] = (b[i] - sum)/A[(i, i)];
+        x[i] = (b[i] - sum)/ a[(i, i)];
     }
     Ok(x)
 
 }
 
-pub(crate) fn forward_substitution<T: ComplexField>(A: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
-    if !A.is_square() {
+pub(crate) fn forward_substitution<T: ComplexField>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
+    if !a.is_square() {
         return Err(Error::BadIn);
     }
     let n = b.len();
     let mut x = Array1::<T>::zeros(n);
-    if A[(0, 0)].is_zero() {
+    if a[(0, 0)].is_zero() {
         return Err(Error::DivBy0);
     }
-    x[0] = b[0]/A[(0, 0)];
+    x[0] = b[0]/ a[(0, 0)];
     println!("{}", x);
     let mut sum: T;
     for i in 1..=n-1 {
         sum = T::zero();
         for p in 0..= (i - 1) {
-            sum += A[(i, p)] * x[p];
+            sum += a[(i, p)] * x[p];
         }
-        if A[(i, i)].is_zero() {
+        if a[(i, i)].is_zero() {
             return Err(Error::DivBy0);
         }
-        x[i] = (b[i] - sum)/A[(i, i)];
+        x[i] = (b[i] - sum)/ a[(i, i)];
 
         println!("{}", x);
     }
@@ -89,6 +89,23 @@ pub fn simple_elimination(m: &Array2<f64>) -> Result<Array2<f64>, Error> {
         println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_m, mults);
     }
     Ok(new_m)
+}
+
+pub fn gaussian_elimination(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let n = b.len();
+    let ab = Array2::<f64>::from_shape_fn((n, n+1),
+                                          |(i, j)| {
+                                              if j < n {
+                                                  return a[(i, j)];
+                                              } b[i]
+                                          });
+    let ub = simple_elimination(&ab)?;
+    let u = Array2::from_shape_fn((n, n),
+                                  |(i, j)| {ub[(i, j)]});
+    let b_ = Array1::from_shape_fn(n,
+                                   |i| {ub[(i, n)]});
+    back_substitution(&u, &b_)
+
 }
 
 pub fn elimination_with_partial_pivoting(m: &Array2<f64>) -> Result<Array2<f64>, Error> {
@@ -149,6 +166,23 @@ pub fn elimination_with_total_pivoting(m: &Array2<f64>) -> Result<(Array2<f64>, 
         println!("k: {}\nU: \n{}\nmults:\n{}\nmarks:\n{}\n----------", k, new_m, mults, marks);
     }
     Ok((new_m, marks))
+}
+
+pub fn gaussian_elimination_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let n = b.len();
+    let ab = Array2::<f64>::from_shape_fn((n, n+1),
+                                          |(i, j)| {
+                                              if j < n {
+                                                  return a[(i, j)];
+                                              } b[i]
+                                          });
+    let (ub, marks) = elimination_with_total_pivoting(&ab)?;
+    let u = Array2::from_shape_fn((n, n),
+                                  |(i, j)| {ub[(i, j)]});
+    let b_ = Array1::from_shape_fn(n,
+                                   |i| {ub[(i, n)]});
+    back_substitution(&u, &b_)
+
 }
 
 pub fn simple_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>), Error> {
@@ -293,6 +327,27 @@ pub fn direct_factorization_with_complex(m: &Array2<f64>) -> Result<(Array2<Comp
     Ok((l, u))
 }
 
+pub fn doolittle(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let (l, u) = direct_factorization(&a, FactorizationType::Doolittle)?;
+    let z = back_substitution(&l, &b)?;
+    forward_substitution(&u, &z)
+}
+
+pub fn crout(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let (l, u) = direct_factorization(&a, FactorizationType::Crout)?;
+    let z = back_substitution(&l, &b)?;
+    forward_substitution(&u, &z)
+}
+
+pub fn cholesky(a: &Array2<f64>, _b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let b = Array1::<Complex<f64>>::from_shape_fn(_b.len(),
+                                                  |i| Complex::from_f64(_b[i]).unwrap());
+    let (l, u) = direct_factorization_with_complex(&a)?;
+    let z = back_substitution(&l, &b)?;
+    let x_ = forward_substitution(&u, &z)?;
+    Ok(Array1::<f64>::from_shape_fn(b.len(), |i| x_[i].re))
+}
+
 /*pub fn jacobi(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, _tol: f64, max_it: usize) -> Result<(Array1<f64>, usize), Error> {
     let n = b.len();
     let tol = _tol.abs();
@@ -368,12 +423,14 @@ pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: Iter
     let mut x_n = _x0.clone();
     let mut x_n1 = Array1::<f64>::zeros(n);
     let d = Array2::<f64>::from_diag(&a.diag());
-    let u = Array2::<f64>::from_shape_fn((n, n), |(i, j)| {
+    let u = Array2::<f64>::from_shape_fn((n, n),
+                                         |(i, j)| {
         if i < j {
             return -a[(i, j)]
         } 0.
     });
-    let l = Array2::<f64>::from_shape_fn((n, n), |(i, j)| {
+    let l = Array2::<f64>::from_shape_fn((n, n),
+                                         |(i, j)| {
         if i > j {
             return -a[(i, j)]
         } 0.
@@ -393,16 +450,16 @@ pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: Iter
     let mut err = f64::infinity();
     let spec = match spectral_radius(&t) {
         Ok(e) => e,
-        Err(_) => 0.
+        Err(_) => return Err(Error::BadIn)
     };
     println!("{}", spec);
-    println!("{:04E} | {:^4E} | {}", i, err, x_n);
+    println!("{:^4} | {:^4.2E} | {}", i, err, x_n);
     while err > tol && i < max_it {
         x_n1 = &t.dot(&x_n) + &c;
         err = (&x_n1 - &x_n).norm();
         x_n.clone_from(&x_n1);
         i += 1;
-        println!("{:^4} | {:.2E} | {}", i, err, x_n1);
+        println!("{:^4} | {:^4.2E} | {}", i, err, x_n1);
     }
 
     println!("{}\n{}\n{}", d, u, l);

@@ -4,6 +4,7 @@ use ndarray::parallel::prelude::*;
 use std::mem;
 use ndarray_linalg::Norm;
 
+#[derive(Debug)]
 pub enum Error {
     DivBy0,
     BadIn,

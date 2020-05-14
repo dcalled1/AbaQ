@@ -16,6 +16,7 @@ use ndarray_linalg::generate::{random};
 use ndarray_linalg::lapack::eigh::*;
 use ndarray::OwnedRepr;
 use crate::linear_equations::utilities::{spectral_radius, IterationType};
+use crate::interpolation::methods::{vandermonde, divided_differences, lagrange_pol};
 
 
 fn main() {
@@ -73,15 +74,20 @@ fn main() {
         };
         println!("{}", ans);
         println!("{:?}", mat);*/
-        let m = array![[4., -1., 0., 3.,],
+        /*let m = array![[4., -1., 0., 3.,],
                        [1., 15.5, 3., 8.,],
                        [8., -1.3, -4., 1.1,],
                        [14., 5., -2., 30.,],];
 
         let v = Array1::<f64>::zeros(4);
         let x0 = Array1::<f64>::ones(4);
-        iterate(&m, &v, &x0, IterationType::Jacobi, 1e-7, 100);
-
+        iterate(&m, &v, &x0, IterationType::Jacobi, 1e-7, 100);*/
+        let x = array![1., 2., 3., 4., 5., 6., 7.,];
+        let y = array![1.1247, -0.8540, 0.5864, -0.6000, -0.9062, 0.9081, -0.2700];
+        println!("{}", 0f64.powi(0));
+        //vandermonde(&x, &y);
+        divided_differences(&x, &y);
+        lagrange_pol(&x, &y);
     }
 
 }
