@@ -82,12 +82,42 @@ fn main() {
         let v = Array1::<f64>::zeros(4);
         let x0 = Array1::<f64>::ones(4);
         iterate(&m, &v, &x0, IterationType::Jacobi, 1e-7, 100);*/
-        let x = array![1., 2., 3., 4., 5., 6., 7.,];
-        let y = array![1.1247, -0.8540, 0.5864, -0.6000, -0.9062, 0.9081, -0.2700];
-        println!("{}", 0f64.powi(0));
-        //vandermonde(&x, &y);
+        let a = array![[4., -1., 0., 3.,],
+                       [1., 15.5, 3., 8.,],
+                       [0., -1.3, -4., 1.1,],
+                       [14., 5., -2., 30.,],];
+        let b = Array1::<f64>::ones(4);
+        let x0 = Array1::<f64>::zeros(4);
+        let x = array![-1., 0., 3., 4.,];
+        let y = array![15.5, 3., 8., 1.,];
+        let nmax = 100usize;
+        let tol = 1e-7;
+
+        println!("\n=========================================================\nsimple elimination");
+        simple_elimination_lu(&a);
+        println!("\n=========================================================\npivoting elimination");
+        pivoting_elimination_lu(&a);
+        println!("\n=========================================================\ncrout");
+        crout(&a, &b);
+        println!("\n=========================================================\ncholesky");
+        cholesky(&a, &b);
+        println!("\n=========================================================\ndoolittle");
+        doolittle(&a, &b);
+        println!("\n=========================================================\njacobi");
+        iterate(&a, &b, &x0, IterationType::Jacobi, tol, nmax);
+        println!("\n=========================================================\ngauss seidel");
+        iterate(&a, &b, &x0, IterationType::GaussSeidel, tol, nmax);
+        println!("\n=========================================================\nsor");
+        iterate(&a, &b, &x0, IterationType::SOR(1.5), tol, nmax);
+        println!("\n=========================================================\nvandermonde");
+        vandermonde(&x, &y);
+        println!("\n=========================================================\ndivided differences");
         divided_differences(&x, &y);
+        println!("\n=========================================================\nlagrange");
         lagrange_pol(&x, &y);
+        println!("\n=========================================================\n");
+
+
     }
 
 }

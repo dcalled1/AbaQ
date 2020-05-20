@@ -29,7 +29,10 @@ fn back_substitution<T: ComplexField>(a: &Array2<T>, b: &Array1<T>) -> Result<Ar
             return Err(Error::DivBy0);
         }
         x[i] = (b[i] - sum)/ a[(i, i)];
+
     }
+    println!("{}", x);
+
     Ok(x)
 
 }
@@ -44,7 +47,6 @@ pub(crate) fn forward_substitution<T: ComplexField>(a: &Array2<T>, b: &Array1<T>
         return Err(Error::DivBy0);
     }
     x[0] = b[0]/ a[(0, 0)];
-    println!("{}", x);
     let mut sum: T;
     for i in 1..=n-1 {
         sum = T::zero();
@@ -56,8 +58,9 @@ pub(crate) fn forward_substitution<T: ComplexField>(a: &Array2<T>, b: &Array1<T>
         }
         x[i] = (b[i] - sum)/ a[(i, i)];
 
-        println!("{}", x);
     }
+    println!("{}", x);
+
     Ok(x)
 }
 
@@ -168,6 +171,10 @@ pub fn elimination_with_total_pivoting(m: &Array2<f64>) -> Result<(Array2<f64>, 
     Ok((new_m, marks))
 }
 
+pub fn short_by_marks(v: &Array1<f64>, marks: &Array1<usize>) -> Array1<f64> {
+    Zip::from(marks).par_apply_collect(|mark| v[*mark])
+}
+
 pub fn gaussian_elimination_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
     let n = b.len();
     let ab = Array2::<f64>::from_shape_fn((n, n+1),
@@ -179,8 +186,9 @@ pub fn gaussian_elimination_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> 
     let (ub, marks) = elimination_with_total_pivoting(&ab)?;
     let u = Array2::from_shape_fn((n, n),
                                   |(i, j)| {ub[(i, j)]});
-    let b_ = Array1::from_shape_fn(n,
-                                   |i| {ub[(i, n)]});
+    let b_ = short_by_marks(&Array1::from_shape_fn(n,
+                                   |i| {ub[(i, n)]}), &marks);
+
     back_substitution(&u, &b_)
 
 }
@@ -212,6 +220,12 @@ pub fn simple_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64
         println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_m, mults);
     }
     Ok((new_m, mults))
+}
+
+pub fn gaussian_factorization(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let (l, u) = simple_elimination_lu(a)?;
+    let z = forward_substitution(&l, &b)?;
+    back_substitution(&u, &z)
 }
 
 pub fn pivoting_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>, Array1<usize>), Error> {
@@ -248,6 +262,13 @@ pub fn pivoting_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f
         println!("k: {}\nU: \n{}\nmults:\n{}\nmarks:\n{}\n----------", k, new_m, mults, marks);
     }
     Ok((new_m, mults, marks))
+}
+
+pub fn pivoting_gaussian_factorization(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let (l, u, marks) = pivoting_elimination_lu(a)?;
+    let b_ = short_by_marks(b, &marks);
+    let z = forward_substitution(&l, &b_)?;
+    back_substitution(&u, &z)
 }
 
 pub fn direct_factorization(m: &Array2<f64>, method: FactorizationType) -> Result<(Array2<f64>, Array2<f64>), Error> {
@@ -295,6 +316,7 @@ pub fn direct_factorization(m: &Array2<f64>, method: FactorizationType) -> Resul
                 .fold(0., |ac, el, eu| ac + el * eu );
             u[(k, i)] = (m[(k, i)]-sum)/l[(k, k)];
         }
+        println!("-------------------\nk: {}\nL:\n{}\nU:{}", k, l, u);
     }
 
     Ok((l, u))
@@ -322,6 +344,8 @@ pub fn direct_factorization_with_complex(m: &Array2<f64>) -> Result<(Array2<Comp
             sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, i])).fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
             u[(k, i)] = (Complex::<f64>::from_real(m[(k, i)])-sum)/l[(k, k)];
         }
+        println!("-------------------\nk: {}\nL:\n{}\nU:{}", k, l, u);
+
     }
 
     Ok((l, u))
@@ -329,22 +353,22 @@ pub fn direct_factorization_with_complex(m: &Array2<f64>) -> Result<(Array2<Comp
 
 pub fn doolittle(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
     let (l, u) = direct_factorization(&a, FactorizationType::Doolittle)?;
-    let z = back_substitution(&l, &b)?;
-    forward_substitution(&u, &z)
+    let z = forward_substitution(&l, &b)?;
+    back_substitution(&u, &z)
 }
 
 pub fn crout(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
     let (l, u) = direct_factorization(&a, FactorizationType::Crout)?;
-    let z = back_substitution(&l, &b)?;
-    forward_substitution(&u, &z)
+    let z = forward_substitution(&l, &b)?;
+    back_substitution(&u, &z)
 }
 
 pub fn cholesky(a: &Array2<f64>, _b: &Array1<f64>) -> Result<Array1<f64>, Error> {
     let b = Array1::<Complex<f64>>::from_shape_fn(_b.len(),
                                                   |i| Complex::from_f64(_b[i]).unwrap());
     let (l, u) = direct_factorization_with_complex(&a)?;
-    let z = back_substitution(&l, &b)?;
-    let x_ = forward_substitution(&u, &z)?;
+    let z = forward_substitution(&l, &b)?;
+    let x_ = back_substitution(&u, &z)?;
     Ok(Array1::<f64>::from_shape_fn(b.len(), |i| x_[i].re))
 }
 
@@ -417,6 +441,10 @@ fn new_gauss_set(a: &Array2<f64>, b: &Array1<f64>,x: &Array1<f64>, w: f64) -> Re
 pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: IterationType, _tol: f64, max_it: usize) -> Result<(Array1<f64>, f64), Error> {
     let n = b.len();
     if !a.is_square() || n != a.nrows() {
+        return Err(Error::BadIn);
+    }
+    let diag_a = a.diag();
+    if diag_a.iter().find(|e| **e == 0.) != None {
         return Err(Error::BadIn);
     }
     let tol = _tol.abs();
