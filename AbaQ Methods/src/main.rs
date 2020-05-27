@@ -14,6 +14,7 @@ use nalgebra::Complex;
 use rand::Rng;
 use ndarray_linalg::generate::{random};
 use ndarray_linalg::lapack::eigh::*;
+use ndarray_linalg::solve::*;
 use ndarray::OwnedRepr;
 use crate::linear_equations::utilities::{spectral_radius, IterationType};
 use crate::interpolation::methods::{vandermonde, divided_differences, lagrange_pol};
@@ -82,12 +83,28 @@ fn main() {
         let v = Array1::<f64>::zeros(4);
         let x0 = Array1::<f64>::ones(4);
         iterate(&m, &v, &x0, IterationType::Jacobi, 1e-7, 100);*/
-        let a = array![[4., -1., 0., 3.,],
-                       [1., 15.5, 3., 8.,],
-                       [0., -1.3, -4., 1.1,],
-                       [14., 5., -2., 30.,],];
+        let a = array![[3., 20., -3.4, 0.],
+                       [20., 3., 2., -250.],
+                       [-3.4, -2., 3., 70.],
+                       [0., -250., 70., 3.]];
         let b = Array1::<f64>::ones(4);
-        let x0 = Array1::<f64>::zeros(4);
+        let nmax = 100usize;
+        let tol = 1e-7;
+        let x0 = Array1::<f64>::ones(4);
+
+        let x = array![-1., 1., 2.338688085676038, 6.,];
+        let y = array![1., 3., -0.494, -2.,];
+        let nmax = 100usize;
+        let tol = 1e-7;
+        divided_differences(&x, &y);
+
+
+        //iterate_parcial(&a, &b, &x0, tol, 100);
+        //iterate(&a, &b, &x0, IterationType::SOR(0.000000005), tol, 100);
+        //doolittle(&a, &b);
+        //println!("{}", a.solve_into(b).unwrap());
+
+        /*let x0 = Array1::<f64>::zeros(4);
         let x = array![-1., 0., 3., 4.,];
         let y = array![15.5, 3., 8., 1.,];
         let nmax = 100usize;
@@ -116,7 +133,7 @@ fn main() {
         println!("\n=========================================================\nlagrange");
         lagrange_pol(&x, &y);
         println!("\n=========================================================\n");
-
+*/
 
     }
 

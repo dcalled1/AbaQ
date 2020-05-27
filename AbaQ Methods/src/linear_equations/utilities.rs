@@ -2,7 +2,8 @@ use ndarray::{Array2, Zip};
 use ndarray::prelude::*;
 use ndarray::parallel::prelude::*;
 use std::mem;
-use ndarray_linalg::Norm;
+use ndarray_linalg::{Norm, c64};
+use nalgebra::{ComplexField, Complex};
 
 #[derive(Debug)]
 pub enum Error {
@@ -23,6 +24,41 @@ pub enum IterationType {
     Jacobi,
     GaussSeidel,
     SOR(f64),
+}
+
+pub struct LUStage<T: ComplexField> {
+    l: Array2<T>,
+    u: Array2<T>,
+    k: usize,
+}
+
+pub struct LUStages<T: ComplexField> {
+    stages: Vec<LUStage<T>>,
+    initial_matrix: Array2<f64>,
+}
+
+impl <T: ComplexField> LUStages<T> {
+    pub fn new(m: &Array2<f64>) -> LUStages<f64> {
+        LUStages {
+            stages: Vec::<LUStage<f64>>::new(),
+            initial_matrix: m.clone(),
+        }
+    }
+
+    pub fn new_with_complex(m: &Array2<f64>) -> LUStages<c64> {
+        LUStages {
+            stages: Vec::<LUStage<c64>>::new(),
+            initial_matrix: m.clone(),
+        }
+    }
+
+    pub fn registry(&mut self, l: &Array2<T>, u: &Array2<T>, k: usize) {
+        self.stages.push(LUStage{
+            l: l.clone(),
+            u: u.clone(),
+            k
+        })
+    }
 }
 
 pub(crate) fn swap_rows(m: &mut Array2<f64>, a: usize, b: usize, start: usize) {
@@ -55,4 +91,6 @@ pub fn spectral_radius(m: &Array2<f64>) -> Result<f64, Error> {
     }
     Ok(b_k.dot(&b_k1) / b_k.dot(&b_k))
 }
+
+
 

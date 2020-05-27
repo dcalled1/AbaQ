@@ -480,7 +480,7 @@ pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: Iter
         Ok(e) => e,
         Err(_) => return Err(Error::BadIn)
     };
-    println!("{}", spec);
+    println!("spectral radius of T: {}", spec);
     println!("{:^4} | {:^4.2E} | {}", i, err, x_n);
     while err > tol && i < max_it {
         x_n1 = &t.dot(&x_n) + &c;
@@ -495,5 +495,6 @@ pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: Iter
 
     Ok((x_n1, spec))
 }
+
 
 
