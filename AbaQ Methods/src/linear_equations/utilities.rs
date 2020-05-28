@@ -30,25 +30,23 @@ pub struct LUStage<T: ComplexField> {
     l: Array2<T>,
     u: Array2<T>,
     k: usize,
+    marks: Option<Array1<usize>>,
 }
 
 pub struct LUStages<T: ComplexField> {
     stages: Vec<LUStage<T>>,
-    initial_matrix: Array2<f64>,
 }
 
 impl <T: ComplexField> LUStages<T> {
     pub fn new(m: &Array2<f64>) -> LUStages<f64> {
         LUStages {
             stages: Vec::<LUStage<f64>>::new(),
-            initial_matrix: m.clone(),
         }
     }
 
     pub fn new_with_complex(m: &Array2<f64>) -> LUStages<c64> {
         LUStages {
             stages: Vec::<LUStage<c64>>::new(),
-            initial_matrix: m.clone(),
         }
     }
 
@@ -56,8 +54,82 @@ impl <T: ComplexField> LUStages<T> {
         self.stages.push(LUStage{
             l: l.clone(),
             u: u.clone(),
-            k
+            k,
+            marks: None,
         })
+    }
+
+    pub fn registry_with_marks(&mut self, l: &Array2<T>, u: &Array2<T>, k: usize, _marks: &Array1<usize>) {
+        self.stages.push(LUStage{
+            l: l.clone(),
+            u: u.clone(),
+            k,
+            marks: Some(_marks.clone()),
+        })
+    }
+}
+
+pub struct Stage {
+    m: Array2<f64>,
+    k: usize,
+    marks: Option<Array1<usize>>,
+}
+
+pub struct Stages {
+    stages: Vec<Stage>,
+}
+
+impl Stages {
+    pub fn new(m: &Array2<f64>) -> Stages {
+        Stages {
+            stages: Vec::<Stage>::new(),
+        }
+    }
+
+    pub fn registry(&mut self, m: &Array2<f64>, k: usize) {
+        self.stages.push(Stage {
+            m: m.clone(),
+            k,
+            marks: None,
+        })
+    }
+
+    pub fn registry_with_marks(&mut self, m: &Array2<f64>, k: usize, _marks: Array1<usize>) {
+        self.stages.push(Stage {
+            m: m.clone(),
+            k,
+            marks: Some(_marks.clone()),
+        })
+    }
+}
+
+pub struct Register {
+    i: usize,
+    err: f64,
+    x: Array1<f64>,
+}
+
+pub struct Table {
+    t: Array2<f64>,
+    c: Array1<f64>,
+    table: Vec<Register>,
+}
+
+impl Table {
+    pub fn new(t: &Array2<f64>, c: &Array1<f64>) -> Table{
+        Table {
+            t: t.clone(),
+            c: c.clone(),
+            table: Vec::<Register>::new(),
+        }
+    }
+
+    pub fn registry(&mut self, i: usize, err: f64, x: &Array1<f64>) {
+        self.table.push(Register {
+            i,
+            err,
+            x: x.clone()
+        });
     }
 }
 
