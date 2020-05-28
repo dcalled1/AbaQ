@@ -64,62 +64,53 @@ pub(crate) fn forward_substitution<T: ComplexField>(a: &Array2<T>, b: &Array1<T>
     Ok(x)
 }
 
-fn eliminate(m: &mut Array2<f64>, k: usize) -> Array1<f64>{
-    let row_k = Zip::from(m.slice_mut(s![k, k..])).par_apply_collect(|x| *x);
-    Zip::from(m.slice_mut(s![k+1.., k..]).genrows_mut())
-        .par_apply_collect(|mut row_i| {
+fn eliminate(a: &mut Array2<f64>, b: &mut Array1<f64>, k: usize) -> Array1<f64>{
+    let row_k = Zip::from(a.slice_mut(s![k, k..])).par_apply_collect(|x| *x);
+    let bk = b[k];
+    Zip::from(a.slice_mut(s![k+1.., k..]).genrows_mut()).and(b.slice_mut(s![k+1..]))
+        .par_apply_collect(|mut row_i, mut bi| {
             let mul = row_i[0]/row_k[0];
             Zip::indexed(row_i).par_apply(|j, mut e| *e -= mul * row_k[j]);
+            *bi -= mul * bk;
             mul
         })
 }
 
-pub fn simple_elimination(m: &Array2<f64>) -> Result<Array2<f64>, Error> {
-    let n = m.nrows();
-    let mut new_m = Array2::<f64>::zeros((n, n));
-    new_m.clone_from(m);
-    println!("{}", new_m);
+pub fn simple_elimination(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array2<f64>, Array1<f64>), Error> {
+    let n = a.nrows();
+    let mut new_a = a.clone();
+    let mut new_b = b.clone();
+    println!("{}", new_a);
     for k in 0..n-1 {
-        if new_m[[k, k]] == 0. {
+        if new_a[[k, k]] == 0. {
             for i in k+1..n {
-                if new_m[[i, k]] != 0. {
-                    swap_rows(&mut new_m, i, k, k);
+                if new_a[[i, k]] != 0. {
+                    swap_rows(&mut new_a, i, k, k);
                     break;
                 }
             }
         }
-        let mults = eliminate(&mut new_m, k);
-        println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_m, mults);
+        let mults = eliminate(&mut new_a, &mut new_b, k);
+        println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_a, mults);
     }
-    Ok(new_m)
+    Ok((new_a, new_b))
 }
 
 pub fn gaussian_elimination(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let n = b.len();
-    let ab = Array2::<f64>::from_shape_fn((n, n+1),
-                                          |(i, j)| {
-                                              if j < n {
-                                                  return a[(i, j)];
-                                              } b[i]
-                                          });
-    let ub = simple_elimination(&ab)?;
-    let u = Array2::from_shape_fn((n, n),
-                                  |(i, j)| {ub[(i, j)]});
-    let b_ = Array1::from_shape_fn(n,
-                                   |i| {ub[(i, n)]});
+    let (u, b_) = simple_elimination(&a, &b)?;
     back_substitution(&u, &b_)
 
 }
 
-pub fn elimination_with_partial_pivoting(m: &Array2<f64>) -> Result<Array2<f64>, Error> {
-    let n = m.nrows();
-    let mut new_m = Array2::<f64>::zeros((n, n));
-    new_m.clone_from(m);
-    println!("{}", new_m);
+pub fn elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array2<f64>, Error> {
+    let n = a.nrows();
+    let mut new_a = a.clone();
+    let mut new_b = b.clone();
+    println!("{}", new_a);
     for k in 0..n-1 {
-        let (mut max, mut max_row) = (new_m[(k, k)].abs(), k);
+        let (mut max, mut max_row) = (new_a[(k, k)].abs(), k);
         for s in k+1..n {
-            let tmp = new_m[(s, k)].abs();
+            let tmp = new_a[(s, k)].abs();
             if tmp > max {
                 max = tmp;
                 max_row = s;
@@ -129,25 +120,26 @@ pub fn elimination_with_partial_pivoting(m: &Array2<f64>) -> Result<Array2<f64>,
             return Err(Error::MultipleSolution);
         }
         if max_row != k {
-            swap_rows(&mut new_m, max_row, k, k);
+            swap_rows(&mut new_a, max_row, k, k);
+            new_b.swap(max_row, k);
         }
-        let mults = eliminate(&mut new_m, k);
-        println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_m, mults);
+        let mults = eliminate(&mut new_a, &mut new_b, k);
+        println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_a, mults);
     }
-    Ok(new_m)
+    Ok(new_a)
 }
 
-pub fn elimination_with_total_pivoting(m: &Array2<f64>) -> Result<(Array2<f64>, Array1<usize>), Error> {
-    let n = m.nrows();
-    let mut new_m = Array2::<f64>::zeros((n, n));
-    new_m.clone_from(m);
+pub fn elimination_with_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array2<f64>, Array1<f64>, Array1<usize>), Error> {
+    let n = a.nrows();
+    let mut new_a = a.clone();
+    let mut new_b = b.clone();
     let mut marks = Array1::<usize>::from((0..n).collect::<Vec<usize>>());
-    println!("{} \nmarks:\n{}", new_m, marks);
+    println!("{} \nmarks:\n{}", new_a, marks);
     for k in 0..n-1 {
         let (mut max, mut max_row, mut max_col) = (0., k, k);
         for r in k..n {
             for s in k..n {
-                let tmp = new_m[(r, s)].abs();
+                let tmp = new_a[(r, s)].abs();
                 if tmp > max {
                     max = tmp;
                     max_row = r;
@@ -159,16 +151,17 @@ pub fn elimination_with_total_pivoting(m: &Array2<f64>) -> Result<(Array2<f64>, 
             return Err(Error::MultipleSolution);
         }
         if max_row != k {
-            swap_rows(&mut new_m, max_row, k, k);
+            swap_rows(&mut new_a, max_row, k, k);
+            new_b.swap(max_row, k);
         }
         if max_col != k {
-            swap_entire_cols(&mut new_m, max_col, k);
+            swap_entire_cols(&mut new_a, max_col, k);
             marks.swap(max_col, k);
         }
-        let mults = eliminate(&mut new_m, k);
-        println!("k: {}\nU: \n{}\nmults:\n{}\nmarks:\n{}\n----------", k, new_m, mults, marks);
+        let mults = eliminate(&mut new_a, &mut new_b, k);
+        println!("k: {}\nU: \n{}\nmults:\n{}\nmarks:\n{}\n----------", k, new_a, mults, marks);
     }
-    Ok((new_m, marks))
+    Ok((new_a, new_b, marks))
 }
 
 pub fn short_by_marks(v: &Array1<f64>, marks: &Array1<usize>) -> Array1<f64> {
@@ -176,19 +169,8 @@ pub fn short_by_marks(v: &Array1<f64>, marks: &Array1<usize>) -> Array1<f64> {
 }
 
 pub fn gaussian_elimination_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let n = b.len();
-    let ab = Array2::<f64>::from_shape_fn((n, n+1),
-                                          |(i, j)| {
-                                              if j < n {
-                                                  return a[(i, j)];
-                                              } b[i]
-                                          });
-    let (ub, marks) = elimination_with_total_pivoting(&ab)?;
-    let u = Array2::from_shape_fn((n, n),
-                                  |(i, j)| {ub[(i, j)]});
-    let b_ = short_by_marks(&Array1::from_shape_fn(n,
-                                   |i| {ub[(i, n)]}), &marks);
-
+    let (u, new_b, marks) = elimination_with_total_pivoting(&a, &b)?;
+    let b_ = short_by_marks(&new_b, &marks);
     back_substitution(&u, &b_)
 
 }

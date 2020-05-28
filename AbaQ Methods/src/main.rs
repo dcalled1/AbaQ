@@ -88,6 +88,7 @@ fn main() {
                        [-3.4, -2., 3., 70.],
                        [0., -250., 70., 3.]];
         let b = Array1::<f64>::ones(4);
+        gaussian_elimination(&a, &b);
         let nmax = 100usize;
         let tol = 1e-7;
         let x0 = Array1::<f64>::ones(4);
@@ -96,7 +97,6 @@ fn main() {
         let y = array![1., 3., -0.494, -2.,];
         let nmax = 100usize;
         let tol = 1e-7;
-        divided_differences(&x, &y);
 
 
         //iterate_parcial(&a, &b, &x0, tol, 100);

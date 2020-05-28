@@ -17,13 +17,6 @@ pub fn vandermonde(x: &Array1<f64>, y: &Array1<f64>) -> Result<String, Error>{
     );
     let de = m.det().unwrap();
     println!("det: {}\n{}", de, m);
-    let ab = Array2::<f64>::from_shape_fn((n, n+1),
-                                          |(i, j)| {
-                                              if j < n {
-                                                  return m[(i, j)];
-                                              } y[i]
-                                          });
-    elimination_with_total_pivoting(&ab)?;
     let a = m.solve_into(y.clone()).unwrap();
     let mut pol = String::new();
     for i in (1..n).rev() {
