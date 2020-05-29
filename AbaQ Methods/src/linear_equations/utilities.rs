@@ -69,34 +69,42 @@ impl <T: ComplexField> LUStages<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct Stage {
-    m: Array2<f64>,
+    a: Array2<f64>,
+    b: Array1<f64>,
+    mults: Array1<f64>,
     k: usize,
     marks: Option<Array1<usize>>,
 }
 
+#[derive(Debug)]
 pub struct Stages {
     stages: Vec<Stage>,
 }
 
 impl Stages {
-    pub fn new(m: &Array2<f64>) -> Stages {
+    pub fn new() -> Stages {
         Stages {
             stages: Vec::<Stage>::new(),
         }
     }
 
-    pub fn registry(&mut self, m: &Array2<f64>, k: usize) {
+    pub fn registry(&mut self, a: &Array2<f64>, b: &Array1<f64>, mults: &Array1<f64>, k: usize) {
         self.stages.push(Stage {
-            m: m.clone(),
+            a: a.clone(),
+            b: b.clone(),
+            mults: mults.clone(),
             k,
             marks: None,
         })
     }
 
-    pub fn registry_with_marks(&mut self, m: &Array2<f64>, k: usize, _marks: Array1<usize>) {
+    pub fn registry_with_marks(&mut self, a: &Array2<f64>, b: &Array1<f64>, mults: &Array1<f64>, k: usize, _marks: Array1<usize>) {
         self.stages.push(Stage {
-            m: m.clone(),
+            a: a.clone(),
+            b: b.clone(),
+            mults: mults.clone(),
             k,
             marks: Some(_marks.clone()),
         })

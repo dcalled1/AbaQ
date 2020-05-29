@@ -1,6 +1,6 @@
 use num_traits::{Zero, One, FromPrimitive};
 use nalgebra::{ComplexField, Complex};
-use crate::linear_equations::utilities::{Error, swap_rows, swap_entire_cols, FactorizationType, IterationType, spectral_radius};
+use crate::linear_equations::utilities::{Error, swap_rows, swap_entire_cols, FactorizationType, IterationType, spectral_radius, Stages};
 use ndarray::{Array2, Array1, Zip, stack};
 use ndarray::prelude::*;
 use ndarray::parallel::prelude::*;
@@ -8,6 +8,7 @@ use std::mem;
 use num_traits::float::FloatCore;
 use ndarray_linalg::norm::*;
 use ndarray_linalg::Inverse;
+use std::fs::read;
 
 fn back_substitution<T: ComplexField>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
     if !a.is_square() {
@@ -76,7 +77,8 @@ fn eliminate(a: &mut Array2<f64>, b: &mut Array1<f64>, k: usize) -> Array1<f64>{
         })
 }
 
-pub fn simple_elimination(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array2<f64>, Array1<f64>), Error> {
+pub fn simple_elimination(a: &Array2<f64>, b: &Array1<f64>) -> (Result<(Array2<f64>, Array1<f64>), Error>, Stages) {
+    let mut stages = Stages::new();
     let n = a.nrows();
     let mut new_a = a.clone();
     let mut new_b = b.clone();
@@ -91,18 +93,25 @@ pub fn simple_elimination(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array2<f6
             }
         }
         let mults = eliminate(&mut new_a, &mut new_b, k);
-        println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_a, mults);
+        stages.registry(&new_a, &new_b, &mults, k);
+        //println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_a, mults);
     }
-    Ok((new_a, new_b))
+    (Ok((new_a, new_b)), stages)
 }
 
-pub fn gaussian_elimination(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let (u, b_) = simple_elimination(&a, &b)?;
-    back_substitution(&u, &b_)
-
+pub fn gaussian_elimination(a: &Array2<f64>, b: &Array1<f64>) -> (Result<Array1<f64>, Error>, Stages) {
+    let (u, b_, stages) = match simple_elimination(&a, &b) {
+        (Ok((_u, _b_)), _stages) => (_u, _b_, _stages),
+        (Err(e), _stages) => return (Err(e), _stages),
+    };
+    let x = match back_substitution(&u, &b_) {
+        Ok(x_) => x_,
+        Err(e) => return (Err(e), stages),
+    };
+    (Ok(x), stages)
 }
 
-pub fn elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array2<f64>, Error> {
+pub fn elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array2<f64>, Array1<f64>), Error> {
     let n = a.nrows();
     let mut new_a = a.clone();
     let mut new_b = b.clone();
@@ -126,7 +135,12 @@ pub fn elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Re
         let mults = eliminate(&mut new_a, &mut new_b, k);
         println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_a, mults);
     }
-    Ok(new_a)
+    Ok((new_a, new_b))
+}
+
+pub fn gaussian_elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+    let (u, b_) = elimination_with_partial_pivoting(&a, &b)?;
+    back_substitution(&u, &b_)
 }
 
 pub fn elimination_with_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array2<f64>, Array1<f64>, Array1<usize>), Error> {
