@@ -100,7 +100,7 @@ impl Stages {
         })
     }
 
-    pub fn registry_with_marks(&mut self, a: &Array2<f64>, b: &Array1<f64>, mults: &Array1<f64>, k: usize, _marks: Array1<usize>) {
+    pub fn registry_with_marks(&mut self, a: &Array2<f64>, b: &Array1<f64>, mults: &Array1<f64>, k: usize, _marks: &Array1<usize>) {
         self.stages.push(Stage {
             a: a.clone(),
             b: b.clone(),

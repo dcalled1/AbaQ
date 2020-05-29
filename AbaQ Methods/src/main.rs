@@ -88,8 +88,9 @@ fn main() {
                        [-3.4, -2., 3., 70.],
                        [0., -250., 70., 3.]];
         let b = Array1::<f64>::ones(4);
-        let (ans, stag) = gaussian_elimination(&a, &b);
-        println!("{:?}\n--------\n{:?}", ans, stag);
+        let (ans, stag) = gaussian_elimination_total_pivoting(&a, &b);
+        println!("{:?}\n--------\n{:?}\n\n", ans, stag);
+        cholesky(&a, &b);
         let nmax = 100usize;
         let tol = 1e-7;
         let x0 = Array1::<f64>::ones(4);

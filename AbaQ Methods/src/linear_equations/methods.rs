@@ -111,7 +111,8 @@ pub fn gaussian_elimination(a: &Array2<f64>, b: &Array1<f64>) -> (Result<Array1<
     (Ok(x), stages)
 }
 
-pub fn elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array2<f64>, Array1<f64>), Error> {
+pub fn elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> (Result<(Array2<f64>, Array1<f64>), Error>, Stages) {
+    let mut stages = Stages::new();
     let n = a.nrows();
     let mut new_a = a.clone();
     let mut new_b = b.clone();
@@ -126,24 +127,33 @@ pub fn elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Re
             }
         }
         if max == 0. {
-            return Err(Error::MultipleSolution);
+            return (Err(Error::MultipleSolution), stages);
         }
         if max_row != k {
             swap_rows(&mut new_a, max_row, k, k);
             new_b.swap(max_row, k);
         }
         let mults = eliminate(&mut new_a, &mut new_b, k);
+        stages.registry(&new_a, &new_b, &mults, k);
         println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_a, mults);
     }
-    Ok((new_a, new_b))
+    (Ok((new_a, new_b)), stages)
 }
 
-pub fn gaussian_elimination_with_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let (u, b_) = elimination_with_partial_pivoting(&a, &b)?;
-    back_substitution(&u, &b_)
+pub fn gaussian_elimination_partial_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> (Result<Array1<f64>, Error>, Stages) {
+    let (u, b_, stages) = match elimination_with_partial_pivoting(&a, &b) {
+        (Ok((_u, _b_)), _stages) => (_u, _b_, _stages),
+        (Err(e), _stages) => return (Err(e), _stages),
+    };
+    let x = match back_substitution(&u, &b_) {
+        Ok(x_) => x_,
+        Err(e) => return (Err(e), stages),
+    };
+    (Ok(x), stages)
 }
 
-pub fn elimination_with_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<(Array2<f64>, Array1<f64>, Array1<usize>), Error> {
+pub fn elimination_with_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> (Result<(Array2<f64>, Array1<f64>, Array1<usize>), Error>, Stages) {
+    let mut stages = Stages::new();
     let n = a.nrows();
     let mut new_a = a.clone();
     let mut new_b = b.clone();
@@ -162,7 +172,7 @@ pub fn elimination_with_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Resu
             }
         }
         if max == 0. {
-            return Err(Error::MultipleSolution);
+            return (Err(Error::MultipleSolution), stages);
         }
         if max_row != k {
             swap_rows(&mut new_a, max_row, k, k);
@@ -173,19 +183,29 @@ pub fn elimination_with_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Resu
             marks.swap(max_col, k);
         }
         let mults = eliminate(&mut new_a, &mut new_b, k);
+        stages.registry_with_marks(&new_a, &new_b, &mults, k, &marks);
         println!("k: {}\nU: \n{}\nmults:\n{}\nmarks:\n{}\n----------", k, new_a, mults, marks);
     }
-    Ok((new_a, new_b, marks))
+    (Ok((new_a, new_b, marks)), stages)
 }
 
 pub fn short_by_marks(v: &Array1<f64>, marks: &Array1<usize>) -> Array1<f64> {
     Zip::from(marks).par_apply_collect(|mark| v[*mark])
 }
 
-pub fn gaussian_elimination_total_pivoting(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let (u, new_b, marks) = elimination_with_total_pivoting(&a, &b)?;
+pub fn gaussian_elimination_total_pivoting(a: &Array2<f64>, b: &Array1<f64>)
+                -> (Result<Array1<f64>, Error>, Stages) {
+    let (u, new_b, marks, stages) =
+        match elimination_with_total_pivoting(&a, &b) {
+        (Ok((_u, _b_, _marks)), _stages) => (_u, _b_, _marks, _stages),
+        (Err(e), _stages) => return (Err(e), _stages),
+    };
     let b_ = short_by_marks(&new_b, &marks);
-    back_substitution(&u, &b_)
+    let x = match back_substitution(&u, &b_) {
+        Ok(x_) => x_,
+        Err(e) => return (Err(e), stages),
+    };
+    (Ok(x), stages)
 
 }
 
