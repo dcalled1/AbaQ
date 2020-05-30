@@ -83,17 +83,19 @@ fn main() {
         let v = Array1::<f64>::zeros(4);
         let x0 = Array1::<f64>::ones(4);
         iterate(&m, &v, &x0, IterationType::Jacobi, 1e-7, 100);*/
-        let a = array![[3., 20., -3.4, 0.],
-                       [20., 3., 2., -250.],
-                       [-3.4, -2., 3., 70.],
-                       [0., -250., 70., 3.]];
+        let a = array![[3., 2., -3.4, 1.],
+                       [2., 6., 2., -5.],
+                       [-3.4, -2., 3., 2.],
+                       [1., -5., 2., 1.]];
         let b = Array1::<f64>::ones(4);
-        let (ans, stag) = gaussian_elimination_total_pivoting(&a, &b);
+        let x0 = Array1::<f64>::ones(4);
+        //let (ans, stag) = gaussian_elimination_total_pivoting(&a, &b);
+        //println!("{:?}\n--------\n{:?}\n\n", ans, stag);
+        let (ans, stag) = cholesky(&a, &b);
+
         println!("{:?}\n--------\n{:?}\n\n", ans, stag);
-        cholesky(&a, &b);
         let nmax = 100usize;
         let tol = 1e-7;
-        let x0 = Array1::<f64>::ones(4);
 
         let x = array![-1., 1., 2.338688085676038, 6.,];
         let y = array![1., 3., -0.494, -2.,];

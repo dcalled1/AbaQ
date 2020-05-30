@@ -1,13 +1,13 @@
 use num_traits::{Zero, One, FromPrimitive};
 use nalgebra::{ComplexField, Complex};
-use crate::linear_equations::utilities::{Error, swap_rows, swap_entire_cols, FactorizationType, IterationType, spectral_radius, Stages};
+use crate::linear_equations::utilities::{Error, swap_rows, swap_entire_cols, FactorizationType, IterationType, spectral_radius, Stages, LUStages, Table};
 use ndarray::{Array2, Array1, Zip, stack};
 use ndarray::prelude::*;
 use ndarray::parallel::prelude::*;
 use std::mem;
 use num_traits::float::FloatCore;
 use ndarray_linalg::norm::*;
-use ndarray_linalg::Inverse;
+use ndarray_linalg::{Inverse, c64};
 use std::fs::read;
 
 fn back_substitution<T: ComplexField>(a: &Array2<T>, b: &Array1<T>) -> Result<Array1<T>, Error> {
@@ -209,7 +209,8 @@ pub fn gaussian_elimination_total_pivoting(a: &Array2<f64>, b: &Array1<f64>)
 
 }
 
-pub fn simple_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>), Error> {
+pub fn simple_elimination_lu(m: &Array2<f64>) -> (Result<(Array2<f64>, Array2<f64>), Error>, LUStages<f64>) {
+    let mut stages = LUStages::<f64>::new();
     let n = m.nrows();
     let mut mults = Array2::<f64>::eye(n);
     let mut new_m = Array2::<f64>::zeros((n, n));
@@ -225,6 +226,7 @@ pub fn simple_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64
             Zip::indexed(row_i).par_apply(|j, mut e| *e -= mul * row_k[j]);
         });
 
+        stages.registry(&mults, &new_m, k);
         /*let mut mul: f64;
         for i in k+1..n {
             mul = new_m[(i, k)]/ new_m[(k, k)];
@@ -235,16 +237,27 @@ pub fn simple_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64
         }*/
         println!("k: {}\nU: \n{}\nmults:\n{}\n----------", k, new_m, mults);
     }
-    Ok((new_m, mults))
+    (Ok((new_m, mults)), stages)
 }
 
-pub fn gaussian_factorization(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let (l, u) = simple_elimination_lu(a)?;
-    let z = forward_substitution(&l, &b)?;
-    back_substitution(&u, &z)
+pub fn gaussian_factorization(a: &Array2<f64>, b: &Array1<f64>) -> (Result<Array1<f64>, Error>, LUStages<f64>) {
+    let (l, u, stages) = match simple_elimination_lu(a) {
+        (Ok((_l, _u)), _stages) => (_l, _u, _stages),
+        (Err(e), _stages) => return (Err(e), _stages),
+    };
+    let z = match forward_substitution(&l, &b) {
+        Ok(_z) => _z,
+        Err(e) => return (Err(e), stages),
+    };
+    let x = match back_substitution(&u, &z) {
+        Ok(_x) => _x,
+        Err(e) => return (Err(e), stages),
+    };
+    (Ok(x), stages)
 }
 
-pub fn pivoting_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f64>, Array1<usize>), Error> {
+pub fn pivoting_elimination_lu(m: &Array2<f64>) -> (Result<(Array2<f64>, Array2<f64>, Array1<usize>), Error>, LUStages<f64>) {
+    let mut stages = LUStages::<f64>::new();
     let n = m.nrows();
     let mut mults = Array2::<f64>::eye(n);
     let mut new_m = Array2::<f64>::zeros((n, n));
@@ -261,7 +274,7 @@ pub fn pivoting_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f
             }
         }
         if max == 0. {
-            return Err(Error::MultipleSolution);
+            return (Err(Error::MultipleSolution), stages);
         }
         if max_row != k {
             swap_rows(&mut new_m, max_row, k, k);
@@ -275,37 +288,52 @@ pub fn pivoting_elimination_lu(m: &Array2<f64>) -> Result<(Array2<f64>, Array2<f
                 *mul_slot = mul;
                 Zip::indexed(row_i).par_apply(|j, mut e| *e -= mul * row_k[j]);
             });
+        stages.registry_with_marks(&mults, &new_m, k,&marks);
         println!("k: {}\nU: \n{}\nmults:\n{}\nmarks:\n{}\n----------", k, new_m, mults, marks);
     }
-    Ok((new_m, mults, marks))
+    (Ok((new_m, mults, marks)), stages)
 }
 
-pub fn pivoting_gaussian_factorization(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let (l, u, marks) = pivoting_elimination_lu(a)?;
+pub fn pivoting_gaussian_factorization(a: &Array2<f64>, b: &Array1<f64>) -> (Result<Array1<f64>, Error>, LUStages<f64>) {
+    let (l, u, marks, stages) = match pivoting_elimination_lu(a){
+        (Ok((_l, _u, _marks)), _stages) => (_l, _u, _marks, _stages),
+        (Err(e), _stages) => return (Err(e), _stages),
+    };
     let b_ = short_by_marks(b, &marks);
-    let z = forward_substitution(&l, &b_)?;
-    back_substitution(&u, &z)
+    let z = match forward_substitution(&l, &b_) {
+        Ok(_z) => _z,
+        Err(e) => return (Err(e), stages),
+    };
+    let x = match back_substitution(&u, &z) {
+        Ok(_x) => _x,
+        Err(e) => return (Err(e), stages),
+    };
+    (Ok(x), stages)
 }
 
-pub fn direct_factorization(m: &Array2<f64>, method: FactorizationType) -> Result<(Array2<f64>, Array2<f64>), Error> {
+pub fn direct_factorization(m: &Array2<f64>, method: FactorizationType)
+                        -> (Result<(Array2<f64>, Array2<f64>), Error>, LUStages<f64>) {
+    let mut stages = LUStages::<f64>::new();
     if !m.is_square() {
-        return Err(Error::BadIn);
+        return (Err(Error::BadIn), stages);
     }
     let n = m.nrows();
-    let (mut l, mut u) = (Array2::<f64>::eye(n), Array2::<f64>::eye(n));
+    let (mut l, mut u)
+                = (Array2::<f64>::eye(n), Array2::<f64>::eye(n));
     let mut sum: f64;
     for k in 0..n {
-        sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, k])).fold(0., |ac, el, eu| ac + el * eu );
+        sum = Zip::from(l.slice(s![k, ..k]))
+            .and(u.slice(s![..k, k])).fold(0., |ac, el, eu| ac + el * eu );
         let val = m[(k, k)] - sum;
         if val.is_zero() {
-            return Err(Error::DivBy0);
+            return (Err(Error::DivBy0), stages);
         }
         l[(k, k)] = match method {
             FactorizationType::Crout => val,
             FactorizationType::Doolittle => 1.,
             FactorizationType::Cholesky => {
                 if val < 0. {
-                    return Err(Error::ComplexNumber);
+                    return (Err(Error::ComplexNumber), stages);
                 }
                 val.sqrt()
             },
@@ -315,7 +343,7 @@ pub fn direct_factorization(m: &Array2<f64>, method: FactorizationType) -> Resul
             FactorizationType::Crout => 1.,
             FactorizationType::Cholesky => {
                 if val < 0. {
-                    return Err(Error::ComplexNumber);
+                    return (Err(Error::ComplexNumber), stages);
                 }
                 val.sqrt()
             },
@@ -332,60 +360,98 @@ pub fn direct_factorization(m: &Array2<f64>, method: FactorizationType) -> Resul
                 .fold(0., |ac, el, eu| ac + el * eu );
             u[(k, i)] = (m[(k, i)]-sum)/l[(k, k)];
         }
+        stages.registry(&l, &u, k);
         println!("-------------------\nk: {}\nL:\n{}\nU:{}", k, l, u);
     }
 
-    Ok((l, u))
+    (Ok((l, u)), stages)
 }
 
-pub fn direct_factorization_with_complex(m: &Array2<f64>) -> Result<(Array2<Complex<f64>>, Array2<Complex<f64>>), Error> {
+pub fn direct_factorization_with_complex(m: &Array2<f64>)
+    -> (Result<(Array2<Complex<f64>>, Array2<Complex<f64>>), Error>, LUStages<c64>) {
+    let mut stages = LUStages::<c64>::new_with_complex();
     let n = m.nrows();
-    let (mut l, mut u) = (Array2::<Complex<f64>>::eye(n), Array2::<Complex<f64>>::eye(n));
+    let (mut l, mut u)
+                = (Array2::<Complex<f64>>::eye(n), Array2::<Complex<f64>>::eye(n));
     let mut sum: Complex<f64>;
     for k in 0..n {
-        sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, k])).fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
+        sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, k]))
+            .fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
         let val = (Complex::<f64>::from_real(m[(k, k)]) - sum).sqrt();
         if val.is_zero() {
-            return Err(Error::DivBy0);
+            return (Err(Error::DivBy0), stages);
         }
         l[(k, k)] = val;
         u[(k, k)] = val;
 
         for i in k+1..n {
-            sum = Zip::from(l.slice(s![i, ..k])).and(u.slice(s![..k, k])).fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
+            sum = Zip::from(l.slice(s![i, ..k])).and(u.slice(s![..k, k]))
+                .fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
             l[(i, k)] = (Complex::<f64>::from_real(m[(i, k)])-sum)/u[(k, k)];
         }
 
         for i in k+1..n {
-            sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, i])).fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
+            sum = Zip::from(l.slice(s![k, ..k])).and(u.slice(s![..k, i]))
+                .fold(Complex::<f64>::zero(), |ac, el, eu| ac + el * eu );
             u[(k, i)] = (Complex::<f64>::from_real(m[(k, i)])-sum)/l[(k, k)];
         }
+        stages.registry(&l, &u, k);
         println!("-------------------\nk: {}\nL:\n{}\nU:{}", k, l, u);
-
     }
-
-    Ok((l, u))
+    (Ok((l, u)), stages)
 }
 
-pub fn doolittle(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let (l, u) = direct_factorization(&a, FactorizationType::Doolittle)?;
-    let z = forward_substitution(&l, &b)?;
-    back_substitution(&u, &z)
+pub fn doolittle(a: &Array2<f64>, b: &Array1<f64>) -> (Result<Array1<f64>, Error>, LUStages<f64>) {
+    let (l, u, stages) =
+        match direct_factorization(&a, FactorizationType::Doolittle) {
+        (Ok((_l, _u)), _stages) => (_l, _u, _stages),
+        (Err(e), _stages) => return (Err(e), _stages),
+    };
+    let z = match forward_substitution(&l, &b) {
+        Ok(_z) => _z,
+        Err(e) => return (Err(e), stages),
+    };
+    let x = match back_substitution(&u, &z) {
+        Ok(_x) => _x,
+        Err(e) => return (Err(e), stages),
+    };
+    (Ok(x), stages)
 }
 
-pub fn crout(a: &Array2<f64>, b: &Array1<f64>) -> Result<Array1<f64>, Error> {
-    let (l, u) = direct_factorization(&a, FactorizationType::Crout)?;
-    let z = forward_substitution(&l, &b)?;
-    back_substitution(&u, &z)
+pub fn crout(a: &Array2<f64>, b: &Array1<f64>) -> (Result<Array1<f64>, Error>, LUStages<f64>) {
+    let (l, u, stages) =
+        match direct_factorization(&a, FactorizationType::Crout) {
+            (Ok((_l, _u)), _stages) => (_l, _u, _stages),
+            (Err(e), _stages) => return (Err(e), _stages),
+        };
+    let z = match forward_substitution(&l, &b) {
+        Ok(_z) => _z,
+        Err(e) => return (Err(e), stages),
+    };
+    let x = match back_substitution(&u, &z) {
+        Ok(_x) => _x,
+        Err(e) => return (Err(e), stages),
+    };
+    (Ok(x), stages)
 }
 
-pub fn cholesky(a: &Array2<f64>, _b: &Array1<f64>) -> Result<Array1<f64>, Error> {
+pub fn cholesky(a: &Array2<f64>, _b: &Array1<f64>) -> (Result<Array1<f64>, Error>, LUStages<c64>) {
     let b = Array1::<Complex<f64>>::from_shape_fn(_b.len(),
                                                   |i| Complex::from_f64(_b[i]).unwrap());
-    let (l, u) = direct_factorization_with_complex(&a)?;
-    let z = forward_substitution(&l, &b)?;
-    let x_ = back_substitution(&u, &z)?;
-    Ok(Array1::<f64>::from_shape_fn(b.len(), |i| x_[i].re))
+    let (l, u, stages) =
+        match direct_factorization_with_complex(&a) {
+            (Ok((_l, _u)), _stages) => (_l, _u, _stages),
+            (Err(e), _stages) => return (Err(e), _stages),
+        };
+    let z = match forward_substitution(&l, &b) {
+        Ok(_z) => _z,
+        Err(e) => return (Err(e), stages),
+    };
+    let x_ = match back_substitution(&u, &z) {
+        Ok(_x) => _x,
+        Err(e) => return (Err(e), stages),
+    };
+    (Ok(Array1::<f64>::from_shape_fn(b.len(), |i| x_[i].re)), stages)
 }
 
 /*pub fn jacobi(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, _tol: f64, max_it: usize) -> Result<(Array1<f64>, usize), Error> {
@@ -454,14 +520,15 @@ fn new_gauss_set(a: &Array2<f64>, b: &Array1<f64>,x: &Array1<f64>, w: f64) -> Re
     Ok(xn)
 }*/
 
-pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: IterationType, _tol: f64, max_it: usize) -> Result<(Array1<f64>, f64), Error> {
+pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: IterationType, _tol: f64, max_it: usize) -> (Result<(Array1<f64>, f64), Error>, Table) {
+    let mut table = Table::new();
     let n = b.len();
     if !a.is_square() || n != a.nrows() {
-        return Err(Error::BadIn);
+        return (Err(Error::BadIn), table);
     }
     let diag_a = a.diag();
     if diag_a.iter().find(|e| **e == 0.) != None {
-        return Err(Error::BadIn);
+        return (Err(Error::BadIn), table);
     }
     let tol = _tol.abs();
     let mut x_n = _x0.clone();
@@ -490,11 +557,12 @@ pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: Iter
             let dl_inv = (&(&d - &(&l * w))).inv().unwrap();
             (dl_inv.dot(&(&(&d * (1. - w)) + &(&u * w))), dl_inv.dot(b) * w) },
     };
+    table.set_t_c(&t, &c);
     let mut i = 0usize;
     let mut err = f64::infinity();
     let spec = match spectral_radius(&t) {
         Ok(e) => e,
-        Err(_) => return Err(Error::BadIn)
+        Err(_) => return (Err(Error::BadIn), table)
     };
     println!("spectral radius of T: {}", spec);
     println!("{:^4} | {:^4.2E} | {}", i, err, x_n);
@@ -504,12 +572,13 @@ pub fn iterate(a: &Array2<f64>, b: &Array1<f64>, _x0: &Array1<f64>, method: Iter
         x_n.clone_from(&x_n1);
         i += 1;
         println!("{:^4} | {:^4.2E} | {}", i, err, x_n1);
+        table.registry(i, err, &x_n1)
     }
 
     println!("{}\n{}\n{}", d, u, l);
 
 
-    Ok((x_n1, spec))
+    (Ok((x_n1, spec)), table)
 }
 
 

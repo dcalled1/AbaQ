@@ -26,6 +26,7 @@ pub enum IterationType {
     SOR(f64),
 }
 
+#[derive(Debug)]
 pub struct LUStage<T: ComplexField> {
     l: Array2<T>,
     u: Array2<T>,
@@ -33,18 +34,19 @@ pub struct LUStage<T: ComplexField> {
     marks: Option<Array1<usize>>,
 }
 
+#[derive(Debug)]
 pub struct LUStages<T: ComplexField> {
     stages: Vec<LUStage<T>>,
 }
 
 impl <T: ComplexField> LUStages<T> {
-    pub fn new(m: &Array2<f64>) -> LUStages<f64> {
+    pub fn new() -> LUStages<f64> {
         LUStages {
             stages: Vec::<LUStage<f64>>::new(),
         }
     }
 
-    pub fn new_with_complex(m: &Array2<f64>) -> LUStages<c64> {
+    pub fn new_with_complex() -> LUStages<c64> {
         LUStages {
             stages: Vec::<LUStage<c64>>::new(),
         }
@@ -100,7 +102,8 @@ impl Stages {
         })
     }
 
-    pub fn registry_with_marks(&mut self, a: &Array2<f64>, b: &Array1<f64>, mults: &Array1<f64>, k: usize, _marks: &Array1<usize>) {
+    pub fn registry_with_marks(&mut self, a: &Array2<f64>, b: &Array1<f64>,
+                               mults: &Array1<f64>, k: usize, _marks: &Array1<usize>) {
         self.stages.push(Stage {
             a: a.clone(),
             b: b.clone(),
@@ -111,12 +114,14 @@ impl Stages {
     }
 }
 
+#[derive(Debug)]
 pub struct Register {
     i: usize,
     err: f64,
     x: Array1<f64>,
 }
 
+#[derive(Debug)]
 pub struct Table {
     t: Array2<f64>,
     c: Array1<f64>,
@@ -124,12 +129,17 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new(t: &Array2<f64>, c: &Array1<f64>) -> Table{
+    pub fn new() -> Table{
         Table {
-            t: t.clone(),
-            c: c.clone(),
+            t: array![[0.]],
+            c: array![0.],
             table: Vec::<Register>::new(),
         }
+    }
+
+    pub fn set_t_c(&mut self, t: &Array2<f64>, c: &Array1<f64>) {
+        self.t = t.clone();
+        self.c = c.clone();
     }
 
     pub fn registry(&mut self, i: usize, err: f64, x: &Array1<f64>) {
