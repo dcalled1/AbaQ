@@ -1,7 +1,7 @@
 use ndarray::{Array1, Array2, Zip};
 use ndarray::parallel::prelude::*;
 use ndarray::prelude::*;
-use crate::linear_equations::utilities::Error;
+use crate::interpolation::utilities::{Error, Splines};
 use crate::linear_equations::methods::{crout, cholesky, gaussian_elimination, elimination_with_total_pivoting};
 use ndarray_linalg::{Solve, Determinant};
 
@@ -109,4 +109,34 @@ pub fn lagrange_pol(x: &Array1<f64>, y: &Array1<f64>) -> Result<String, Error> {
     }
     println!("\n\n{}", pol);
     Ok(pol)
+}
+
+pub fn linear_splines(x: &Array1<f64>, y: &Array1<f64>) -> Result<Splines, Error> {
+    let n = x.len();
+    if n != y.len() {
+        return Err(Error::BadIn);
+    }
+    let (mut a, mut b, mut x1, mut x2, mut y1): (f64, f64, f64, f64, f64);
+    let mut pol: String;
+    let mut splines = Splines::new();
+    for i in 1..n {
+        x1 = x[i - 1];
+        x2 = x[i];
+        if x1 >= x2 {
+            return Err(Error::BadIn);
+        }
+        y1 = y[i - 1];
+        a = (y[i] - y1) / (x2 - x1);
+        if a == 1. {
+            pol = String::from("x");
+        } else {
+            pol = format!("{}*x", a)
+        }
+
+        if y1 != a * x1 {
+            pol.push_str(format!("{:+}", y1 - a * x1).as_str());
+        }
+        splines.add(x1, x2, &pol);
+    }
+    Ok(splines)
 }

@@ -11,6 +11,7 @@ pub enum Error {
     BadIn,
     MultipleSolution,
     ComplexNumber,
+    NotEnoughIterations,
 }
 
 #[derive(PartialEq, Eq)]

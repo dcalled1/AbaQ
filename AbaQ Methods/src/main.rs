@@ -17,7 +17,7 @@ use ndarray_linalg::lapack::eigh::*;
 use ndarray_linalg::solve::*;
 use ndarray::OwnedRepr;
 use crate::linear_equations::utilities::{spectral_radius, IterationType};
-use crate::interpolation::methods::{vandermonde, divided_differences, lagrange_pol};
+use crate::interpolation::methods::{vandermonde, divided_differences, lagrange_pol, linear_splines};
 
 
 fn main() {
@@ -83,7 +83,7 @@ fn main() {
         let v = Array1::<f64>::zeros(4);
         let x0 = Array1::<f64>::ones(4);
         iterate(&m, &v, &x0, IterationType::Jacobi, 1e-7, 100);*/
-        let a = array![[3., 2., -3.4, 1.],
+        /*let a = array![[3., 2., -3.4, 1.],
                        [2., 6., 2., -5.],
                        [-3.4, -2., 3., 2.],
                        [1., -5., 2., 1.]];
@@ -100,7 +100,7 @@ fn main() {
         let x = array![-1., 1., 2.338688085676038, 6.,];
         let y = array![1., 3., -0.494, -2.,];
         let nmax = 100usize;
-        let tol = 1e-7;
+        let tol = 1e-7;*/
 
 
         //iterate_parcial(&a, &b, &x0, tol, 100);
@@ -138,6 +138,9 @@ fn main() {
         lagrange_pol(&x, &y);
         println!("\n=========================================================\n");
 */
+
+        let ans = linear_splines(&array![1., 2.], &array![-1., 20.65436435,]);
+        println!("{:?}", ans);
 
     }
 
