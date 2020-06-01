@@ -11,13 +11,13 @@ mod interpolation;
 use std::f64;
 use ndarray::prelude::*;
 use nalgebra::Complex;
-use rand::Rng;
 use ndarray_linalg::generate::{random};
 use ndarray_linalg::lapack::eigh::*;
 use ndarray_linalg::solve::*;
 use ndarray::OwnedRepr;
 use crate::linear_equations::utilities::{spectral_radius, IterationType};
 use crate::interpolation::methods::{vandermonde, divided_differences, lagrange_pol, linear_splines, quadratic_splines, cubic_splines};
+use crate::root_finding::utilities::load_function;
 
 
 fn main() {
@@ -144,6 +144,9 @@ fn main() {
 
         let (ans, a) = cubic_splines(&x, &y).unwrap();
         println!("{:?}\n\n{}", ans, a);
+        let f = load_function(String::from("x^2 + 24.5")).unwrap();
+        let y = f(2.);
+        println!("{}", y);
 
     }
 

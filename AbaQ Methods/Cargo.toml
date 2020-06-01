@@ -10,5 +10,5 @@ edition = "2018"
 num-traits = "0.2.11"
 nalgebra = "0.21"
 ndarray = {version = "0.13.1", features = ["rayon"]}
-rand = "0.7.3"
 ndarray-linalg = { version = "0.12", features = ["intel-mkl"] }
+meval = "0.2.0"

@@ -1,6 +1,6 @@
 use num_traits::{Float, abs};
 use crate::root_finding::register::Logbook;
-use crate::root_finding::utilities::{Optimistic, Pessimistic, Error, calc_error};
+use crate::root_finding::utilities::{Optimistic, Pessimistic, Error, calc_error, check};
 
 
 /*
@@ -13,17 +13,19 @@ pub trait RunnableMethod {
 
 //Methods
 
-pub fn incremental_search(f: fn(f64)->Result<f64, Pessimistic>, x0: f64, dx: f64, n:u32)
+pub fn incremental_search(f: impl Fn(f64)->f64, x0: f64, dx: f64, n:u32)
     -> Result<(Option<f64>, Option<(f64, f64)>, Optimistic), Pessimistic> {
     let (mut xa, mut xb) = (x0, x0 + dx);
-    let (mut ya, mut yb) = (f(xa)?, f(xb)?);
+    let (mut ya, mut yb) = (f(xa), f(xb));
 
     let mut i = 0u32;
     while ya * yb > 0f64 && i < n {
         xa = xb;
         xb = xa + dx;
-        ya = f(xa)?;
-        yb = f(xb)?;
+        ya = f(xa);
+        check(ya)?;
+        yb = f(xb);
+        check(yb)?;
         i += 1;
     }
     if ya == 0f64 {
@@ -38,7 +40,7 @@ pub fn incremental_search(f: fn(f64)->Result<f64, Pessimistic>, x0: f64, dx: f64
     Err(Pessimistic::MaxIterationsReached)
 }
 
-pub fn bisection(f: fn(f64)->Result<f64, Pessimistic>, _xu: f64, _xl: f64, tol: f64, n:u32, error_type: Error)
+pub fn bisection(f: impl Fn(f64)->f64, _xu: f64, _xl: f64, tol: f64, n:u32, error_type: Error)
                           -> (Result<(f64, u32, Optimistic), Pessimistic>, Logbook) {
     let mut logbook = Logbook::new(n, vec!["xl".into(), "xm".into(), "xu".into(),
                                            "yl".into(), "ym".into(), "yu".into(), "error".into()]);
@@ -47,8 +49,16 @@ pub fn bisection(f: fn(f64)->Result<f64, Pessimistic>, _xu: f64, _xl: f64, tol: 
     } else {
         (_xl, _xu)
     };
-    let mut yu = match f(xu) {Ok(v) => v, Err(e)=> return (Err(e), logbook)};
-    let mut yl = match f(xl) {Ok(v) => v, Err(e)=> return (Err(e), logbook)};
+    let mut yu = f(xu);
+    match check(yu) {
+        Err(e) => return (Err(e), logbook),
+        _ => (),
+    }
+    let mut yl = f(xl);
+    match check(yl) {
+        Err(e) => return (Err(e), logbook),
+        _ => (),
+    }
     if yu == 0f64 {
         return (Ok((xu, 0, Optimistic::RootFound)), logbook);
     }
@@ -59,7 +69,11 @@ pub fn bisection(f: fn(f64)->Result<f64, Pessimistic>, _xu: f64, _xl: f64, tol: 
         return (Err(Pessimistic::InvalidInput), logbook);
     }
     let mut xm = (xl + xu)/2f64;
-    let mut ym = match f(xm) {Ok(v) => v, Err(e)=> return (Err(e), logbook)};
+    let mut ym = f(xm);
+    match check(ym) {
+        Err(e) => return (Err(e), logbook),
+        _ => (),
+    }
     let mut err: f64 = Float::infinity();
     let mut i = 1u32;
     logbook.registry(i, vec![xl, xm, xu, yl, ym, yu, err]);
@@ -74,7 +88,11 @@ pub fn bisection(f: fn(f64)->Result<f64, Pessimistic>, _xu: f64, _xl: f64, tol: 
         }
         xaux = xm;
         xm = (xl + xu)/2f64;
-        ym = match f(xm) {Ok(v) => v, Err(e)=> return (Err(e), logbook)};
+        ym = f(xm);
+        match check(ym) {
+            Err(e) => return (Err(e), logbook),
+            _ => (),
+        }
         err = calc_error(xm, xaux, error_type);
         i += 1;
         logbook.registry(i, vec![xl, xm, xu, yl, ym, yu, err]);
