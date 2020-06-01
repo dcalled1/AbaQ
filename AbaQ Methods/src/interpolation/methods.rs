@@ -140,3 +140,83 @@ pub fn linear_splines(x: &Array1<f64>, y: &Array1<f64>) -> Result<Splines, Error
     }
     Ok(splines)
 }
+
+pub fn quadratic_splines(x: &Array1<f64>, y: &Array1<f64>) -> Result<(Splines, Array2<f64>), Error> {
+    let n = x.len();
+    if n != y.len() {
+        return Err(Error::BadIn);
+    }
+    let mut splines = Splines::new();
+    let a_size = 3*(n -1);
+    let mut a = Array2::<f64>::zeros((a_size, a_size));
+    a[(0, 0)] = x[0].powi(2);
+    a[(0, 1)] = x[0];
+    a[(0, 2)] = 1.;
+    a[(a_size - 1, 0)] = 2.;
+    let (mut i_1, mut i_n, mut i_3, mut i_2n): (usize, usize, usize, usize);
+    for i in 0..n-1 {
+        i_1 = i + 1;
+        i_3 = i * 3;
+        a[(i_1, i_3    )] = x[i_1].powi(2);
+        a[(i_1, i_3 + 1)] = x[i_1];
+        a[(i_1, i_3 + 2)] = 1.;
+    }
+    for i in 0..n-2 {
+        i_n = i + n;
+        i_1 = i + 1;
+        i_3 = i * 3;
+        a[(i_n, i_3    )] = x[i_1].powi(2);
+        a[(i_n, i_3 + 1)] = x[i_1];
+        a[(i_n, i_3 + 2)] = 1.;
+        a[(i_n, i_3 + 3)] = -x[i_1].powi(2);
+        a[(i_n, i_3 + 4)] = -x[i_1];
+        a[(i_n, i_3 + 5)] = -1.;
+    }
+
+    for i in 0..n-2 {
+        i_2n = i + 2 * n - 2;
+        i_1 = i + 1;
+        i_3 = i * 3;
+        a[(i_2n, i_3    )] = 2. * x[i_1];
+        a[(i_2n, i_3 + 1)] = 1.;
+
+        a[(i_2n, i_3 + 3)] = -2. * x[i_1];
+        a[(i_2n, i_3 + 4)] = -1.;
+    }
+    let mut b = Array1::<f64>::zeros(a_size);
+    Zip::from(b.slice_mut(s![..n])).and(y).par_apply(|bi, yi| *bi = *yi);
+    let ans = a.solve_into(b).unwrap();
+
+    let mut pol: String;
+    let (mut ai, mut bi, mut ci): (f64, f64, f64);
+    for i in 1..n {
+        ai = ans[(i - 1) * 3    ];
+        bi = ans[(i - 1) * 3 + 1];
+        ci = ans[(i - 1) * 3 + 2];
+        pol = match ai {
+            0.  => String::new(),
+            1.  => String::from("x^2"),
+            -1. => String::from("-x^2"),
+            _   => format!("{}x^2", ai),
+        };
+        match bi {
+            0.  => (),
+            1.  => pol.push('x'),
+            -1. => pol.push_str("-x"),
+            _   => pol.push_str(format!("{:+}*x", bi).as_str()),
+        }
+        match ci {
+            0. => (),
+            _  => pol.push_str(format!("{:+}", ci).as_str()),
+        }
+        if pol.starts_with("+") {
+            pol.remove(0);
+        }
+
+        splines.add(x[i-1], x[i], &pol);
+    }
+
+
+    println!("{}\n\n{}", a, ans);
+    Ok((splines, a))
+}

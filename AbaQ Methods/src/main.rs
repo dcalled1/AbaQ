@@ -17,7 +17,7 @@ use ndarray_linalg::lapack::eigh::*;
 use ndarray_linalg::solve::*;
 use ndarray::OwnedRepr;
 use crate::linear_equations::utilities::{spectral_radius, IterationType};
-use crate::interpolation::methods::{vandermonde, divided_differences, lagrange_pol, linear_splines};
+use crate::interpolation::methods::{vandermonde, divided_differences, lagrange_pol, linear_splines, quadratic_splines};
 
 
 fn main() {
@@ -139,8 +139,11 @@ fn main() {
         println!("\n=========================================================\n");
 */
 
-        let ans = linear_splines(&array![1., 2.], &array![-1., 20.65436435,]);
-        println!("{:?}", ans);
+        let x = array![-2., -1., 2., 3.,];
+        let y = array![12.1353, 6.3679, -4.6109, 2.0855,];
+
+        let (ans, a) = quadratic_splines(&x, &y).unwrap();
+        println!("{:?}\n\n{}", ans, a);
 
     }
 
